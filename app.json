@@ -1,12 +1,31 @@
 {
   "expo": {
-    "name": "app-mobile",
+    "name": "POS Negocios",
     "slug": "app-mobile",
+    "scheme": "posnegocios",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "La app necesita acceso a la cámara para escanear códigos de barras de productos."
+        }
+      ],
+      "expo-sqlite"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "apiUrl": "http://localhost:3001",
+      "identityUrl": "http://localhost:3002"
+    },
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
