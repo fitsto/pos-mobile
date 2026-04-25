@@ -6,10 +6,14 @@ function mkProducto(id: string, precio: number, oferta: number | null = null) {
   return Producto.create({
     id,
     nombre: `P-${id}`,
+    descripcion: null,
     codigoBarras: null,
     sku: null,
+    costoNetoUnitario: 0,
     precioVentaFinalUnitario: precio,
+    precioVentaNetoUnitario: precio,
     precioOferta: oferta,
+    imagenes: [],
     imagenUrl: null,
     activo: true,
   });

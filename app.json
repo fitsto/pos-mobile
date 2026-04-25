@@ -17,7 +17,15 @@
           "cameraPermission": "La app necesita acceso a la cámara para escanear códigos de barras de productos."
         }
       ],
-      "expo-sqlite"
+      "expo-sqlite",
+      "expo-font",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "La app necesita acceso a tu galería para elegir fotos de productos.",
+          "cameraPermission": "La app necesita la cámara para tomar fotos de productos."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

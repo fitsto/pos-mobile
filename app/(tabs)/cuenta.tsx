@@ -1,75 +1,79 @@
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors, radius, spacing, type } from '../../src/runtime/theme/tokens';
-import { useSesionStore } from '../../src/runtime/stores/SesionStore';
+/**
+ * Pantalla de cuenta: datos del operador + cambio de negocio + logout.
+ * También permite alternar el modo de tema (light/dark/system).
+ */
+import { View } from 'react-native';
+import { Button, Card, Chip, Screen, Text } from '../../src/runtime/components/ui';
 import { container } from '../../src/runtime/di/container';
+import { useSesionStore } from '../../src/runtime/stores/SesionStore';
+import { useTheme, useThemeMode } from '../../src/runtime/theme/ThemeProvider';
 
-export default function CuentaScreen() {
-  const sesion = useSesionStore((s) => s.sesion);
-  const negocio = useSesionStore((s) => s.negocio);
-  const reset = useSesionStore((s) => s.reset);
-  const setNegocio = useSesionStore((s) => s.setNegocio);
-
-  async function logout() {
-    await container.logout.execute();
-    reset();
-  }
-
-  return (
-    <SafeAreaView style={styles.root}>
-      <Text style={styles.title}>Mi cuenta</Text>
-      <View style={styles.card}>
-        <Text style={styles.label}>Usuario</Text>
-        <Text style={styles.value}>{sesion?.usuario.email}</Text>
-        <Text style={styles.label}>Tienda</Text>
-        <Text style={styles.value}>{negocio?.nombre}</Text>
-        <Text style={styles.label}>Rol</Text>
-        <Text style={styles.value}>{negocio?.rol}</Text>
-        {negocio?.ubicacionNombre ? (
-          <>
-            <Text style={styles.label}>Ubicación</Text>
-            <Text style={styles.value}>{negocio.ubicacionNombre}</Text>
-          </>
-        ) : null}
-      </View>
-
-      <Pressable onPress={() => setNegocio(null)} style={styles.secondary}>
-        <Text style={styles.secondaryText}>Cambiar de negocio</Text>
-      </Pressable>
-      <Pressable onPress={logout} style={styles.danger}>
-        <Text style={styles.dangerText}>Cerrar sesión</Text>
-      </Pressable>
-    </SafeAreaView>
-  );
+function Row({ label, value }: { label: string; value: string }) {
+    const t = useTheme();
+    return (
+        <View
+            style={{
+                flexDirection: 'row',
+                justifyContent: 'space-between',
+                alignItems: 'baseline',
+                paddingVertical: t.space['2'],
+                borderBottomWidth: t.border.default,
+                borderBottomColor: t.color.border.subtle,
+            }}
+        >
+            <Text variant="label" tone="tertiary">{label}</Text>
+            <Text variant="bodyMd" style={{ flexShrink: 1, textAlign: 'right' }}>{value}</Text>
+        </View>
+    );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, padding: spacing.lg, gap: spacing.lg },
-  title: { ...type.display, color: colors.text },
-  card: {
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.lg,
-    gap: spacing.sm,
-  },
-  label: { ...type.label, color: colors.textMuted },
-  value: { ...type.body, color: colors.text, marginBottom: spacing.sm },
-  secondary: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  secondaryText: { color: colors.text, fontWeight: '600' },
-  danger: {
-    borderWidth: 1,
-    borderColor: colors.danger,
-    borderRadius: radius.md,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-  },
-  dangerText: { color: colors.danger, fontWeight: '700' },
-});
+export default function CuentaScreen() {
+    const t = useTheme();
+    const { mode, setMode } = useThemeMode();
+    const sesion = useSesionStore((s) => s.sesion);
+    const negocio = useSesionStore((s) => s.negocio);
+    const reset = useSesionStore((s) => s.reset);
+    const setNegocio = useSesionStore((s) => s.setNegocio);
+
+    async function logout() {
+        await container.logout.execute();
+        reset();
+    }
+
+    return (
+        <Screen scroll title="Mi cuenta">
+            <Card variant="subtle" padding={4}>
+                <Row label="Usuario" value={sesion?.usuario.email ?? '—'} />
+                <Row label="Tienda" value={negocio?.nombre ?? '—'} />
+                <Row label="Rol" value={negocio?.rol ?? '—'} />
+                {negocio?.ubicacionNombre ? (
+                    <Row label="Ubicación" value={negocio.ubicacionNombre} />
+                ) : null}
+            </Card>
+
+            <Text variant="label" tone="tertiary" style={{ marginTop: t.space['5'], marginBottom: t.space['2'] }}>
+                TEMA
+            </Text>
+            <View style={{ flexDirection: 'row', gap: t.space['2'] }}>
+                <Chip label="Sistema" selected={mode === 'system'} onPress={() => setMode('system')} />
+                <Chip label="Claro" selected={mode === 'light'} onPress={() => setMode('light')} />
+                <Chip label="Oscuro" selected={mode === 'dark'} onPress={() => setMode('dark')} />
+            </View>
+
+            <View style={{ gap: t.space['2'], marginTop: t.space['6'] }}>
+                <Button
+                    variant="secondary"
+                    label="Cambiar de negocio"
+                    onPress={() => setNegocio(null)}
+                    fullWidth
+                />
+                <Button
+                    variant="danger"
+                    label="Cerrar sesión"
+                    onPress={logout}
+                    fullWidth
+                />
+            </View>
+        </Screen>
+    );
+}

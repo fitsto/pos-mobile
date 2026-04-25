@@ -7,6 +7,8 @@ export interface TiendaData {
   ubicacionId: string | null;
   ubicacionNombre: string | null;
   usarControlCaja: boolean;
+  /** % de impuesto sobre ventas (IVA). Default CL = 19. */
+  impuestoVentaPorcentaje: number;
 }
 
 export class Tienda {
@@ -26,6 +28,7 @@ export class Tienda {
   get ubicacionId(): string | null { return this.data.ubicacionId; }
   get ubicacionNombre(): string | null { return this.data.ubicacionNombre; }
   get usarControlCaja(): boolean { return this.data.usarControlCaja; }
+  get impuestoVentaPorcentaje(): number { return this.data.impuestoVentaPorcentaje; }
 
   get esVendedor(): boolean { return this.data.rol === 'VENDEDOR'; }
   get puedeGestionarStock(): boolean { return this.data.rol !== 'VENDEDOR'; }

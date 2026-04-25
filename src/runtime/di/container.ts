@@ -8,6 +8,15 @@ import { HttpTiendaRepository } from '../../contexts/tienda/infrastructure/HttpT
 import { ListarMisTiendasUseCase } from '../../contexts/tienda/application/ListarMisTiendasUseCase';
 import { HttpProductoRepository } from '../../contexts/producto/infrastructure/HttpProductoRepository';
 import { BuscarProductoUseCase } from '../../contexts/producto/application/BuscarProductoUseCase';
+import { ObtenerProductoUseCase } from '../../contexts/producto/application/ObtenerProductoUseCase';
+import { CrearProductoUseCase } from '../../contexts/producto/application/CrearProductoUseCase';
+import { ActualizarProductoUseCase } from '../../contexts/producto/application/ActualizarProductoUseCase';
+import { SubirImagenProductoUseCase } from '../../contexts/producto/application/SubirImagenProductoUseCase';
+import { DesactivarProductoUseCase } from '../../contexts/producto/application/DesactivarProductoUseCase';
+import { ActivarProductoUseCase } from '../../contexts/producto/application/ActivarProductoUseCase';
+import { BuscarProductoPorCodigoUseCase } from '../../contexts/producto/application/BuscarProductoPorCodigoUseCase';
+import { HttpProductoMaestroRepository } from '../../contexts/producto-maestro/infrastructure/HttpProductoMaestroRepository';
+import { BuscarProductoMaestroUseCase } from '../../contexts/producto-maestro/application/BuscarProductoMaestroUseCase';
 import { HttpVarianteRepository } from '../../contexts/producto/infrastructure/HttpVarianteRepository';
 import { ListarVariantesUseCase } from '../../contexts/producto/application/ListarVariantesUseCase';
 import { HttpVentaRepository } from '../../contexts/venta/infrastructure/HttpVentaRepository';
@@ -25,6 +34,7 @@ import { HttpUbicacionRepository } from '../../contexts/ubicacion/infrastructure
 import { ListarUbicacionesUseCase } from '../../contexts/ubicacion/application/ListarUbicacionesUseCase';
 import { HttpStockRepository } from '../../contexts/stock/infrastructure/HttpStockRepository';
 import { ListarStockPorUbicacionUseCase } from '../../contexts/stock/application/ListarStockPorUbicacionUseCase';
+import { ListarStockPorProductoUseCase } from '../../contexts/stock/application/ListarStockPorProductoUseCase';
 import { HttpClienteRepository } from '../../contexts/cliente/infrastructure/HttpClienteRepository';
 import { BuscarClientePorRutUseCase } from '../../contexts/cliente/application/BuscarClientePorRutUseCase';
 import { catalogoLocal } from '../catalogo/CatalogoSyncManager';
@@ -40,6 +50,7 @@ const ajusteRepository = new HttpAjusteInventarioRepository();
 const ubicacionRepository = new HttpUbicacionRepository();
 const stockRepository = new HttpStockRepository();
 const clienteRepository = new HttpClienteRepository();
+const productoMaestroRepository = new HttpProductoMaestroRepository();
 
 export const container = {
   login: new LoginUseCase(authRepository, sesionStorage),
@@ -48,6 +59,14 @@ export const container = {
   refreshSession: new RefreshSessionUseCase(authRepository),
   listarMisNegocios: new ListarMisTiendasUseCase(negocioRepository),
   buscarProducto: new BuscarProductoUseCase(productoRepository),
+  obtenerProducto: new ObtenerProductoUseCase(productoRepository),
+  crearProducto: new CrearProductoUseCase(productoRepository),
+  actualizarProducto: new ActualizarProductoUseCase(productoRepository),
+  subirImagenProducto: new SubirImagenProductoUseCase(productoRepository),
+  desactivarProducto: new DesactivarProductoUseCase(productoRepository),
+  activarProducto: new ActivarProductoUseCase(productoRepository),
+  buscarProductoPorCodigo: new BuscarProductoPorCodigoUseCase(productoRepository),
+  buscarProductoMaestro: new BuscarProductoMaestroUseCase(productoMaestroRepository),
   listarVariantes: new ListarVariantesUseCase(varianteRepository),
   crearVenta: new CrearVentaUseCase(ventaRepository),
   listarVentas: new ListarVentasUseCase(ventaRepository),
@@ -59,6 +78,7 @@ export const container = {
   registrarAjusteStock: new RegistrarAjusteUseCase(ajusteRepository),
   listarUbicaciones: new ListarUbicacionesUseCase(ubicacionRepository),
   listarStockPorUbicacion: new ListarStockPorUbicacionUseCase(stockRepository),
+  listarStockPorProducto: new ListarStockPorProductoUseCase(stockRepository),
   buscarClientePorRut: new BuscarClientePorRutUseCase(clienteRepository),
   catalogoLocalRepo: catalogoLocal.repo,
   syncCatalogo: catalogoLocal.syncUseCase,

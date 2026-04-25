@@ -39,3 +39,7 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Local skills (per-machine claude config)
+.agents/
+.claude/

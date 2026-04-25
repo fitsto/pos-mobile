@@ -1,6 +1,10 @@
 import { httpClient } from '../../shared/infrastructure/http/HttpClient';
 import type { Stock } from '../domain/Stock';
-import type { ListarStockParams, StockRepository } from '../domain/StockRepository';
+import type {
+  ListarStockParams,
+  ListarStockPorProductoParams,
+  StockRepository,
+} from '../domain/StockRepository';
 
 interface ApiStock {
   productoId: string;
@@ -19,13 +23,30 @@ export class HttpStockRepository implements StockRepository {
       `/tiendas/${negocioId}/stock?${params}`,
       { token },
     );
-    return raw.map((s) => ({
-      productoId: s.productoId,
-      ubicacionId: s.ubicacionId,
-      cantidad: Number(s.cantidad),
-      varianteId: s.varianteId ?? null,
-      varianteTalla: s.varianteTalla ?? null,
-      modeloNombre: s.modeloNombre ?? null,
-    }));
+    return raw.map(toStock);
   }
+
+  async listarPorProducto({
+    negocioId,
+    productoId,
+    token,
+  }: ListarStockPorProductoParams): Promise<Stock[]> {
+    const params = new URLSearchParams({ productoId });
+    const raw = await httpClient.get<ApiStock[]>(
+      `/tiendas/${negocioId}/stock?${params}`,
+      { token },
+    );
+    return raw.map(toStock);
+  }
+}
+
+function toStock(s: ApiStock): Stock {
+  return {
+    productoId: s.productoId,
+    ubicacionId: s.ubicacionId,
+    cantidad: Number(s.cantidad),
+    varianteId: s.varianteId ?? null,
+    varianteTalla: s.varianteTalla ?? null,
+    modeloNombre: s.modeloNombre ?? null,
+  };
 }

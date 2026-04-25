@@ -1,96 +1,148 @@
+/**
+ * Layout de tabs inferiores. Iconos de Ionicons, colores reactivos al theme,
+ * badge de pendientes de sync sobre la tab "Pendientes".
+ */
+import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import { Text, View } from 'react-native';
-import { colors } from '../../src/runtime/theme/tokens';
-import { useSesionStore } from '../../src/runtime/stores/SesionStore';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
-  selectPendingCount,
-  useOfflineQueueStore,
+    selectPendingCount,
+    useOfflineQueueStore,
 } from '../../src/runtime/stores/OfflineQueueStore';
+import { useSesionStore } from '../../src/runtime/stores/SesionStore';
+import { useTheme } from '../../src/runtime/theme/ThemeProvider';
 
-function TabIcon({ label }: { label: string }) {
-  return <Text style={{ fontSize: 11, fontWeight: '700', letterSpacing: 1 }}>{label}</Text>;
+type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
+
+function TabIcon({ name, color, size }: { name: IoniconName; color: string; size: number }) {
+    return <Ionicons name={name} color={color} size={size} />;
 }
 
-function TabIconConBadge({ label, badge }: { label: string; badge: number }) {
-  return (
-    <View style={{ position: 'relative' }}>
-      <TabIcon label={label} />
-      {badge > 0 && (
-        <View
-          style={{
-            position: 'absolute',
-            top: -6,
-            right: -12,
-            minWidth: 16,
-            height: 16,
-            paddingHorizontal: 4,
-            borderRadius: 8,
-            backgroundColor: '#e11d48',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>
-            {badge > 9 ? '9+' : badge}
-          </Text>
+function TabIconConBadge({
+    name,
+    color,
+    size,
+    badge,
+}: {
+    name: IoniconName;
+    color: string;
+    size: number;
+    badge: number;
+}) {
+    const t = useTheme();
+    return (
+        <View style={{ position: 'relative' }}>
+            <Ionicons name={name} color={color} size={size} />
+            {badge > 0 ? (
+                <View
+                    style={{
+                        position: 'absolute',
+                        top: -4,
+                        right: -10,
+                        minWidth: 16,
+                        height: 16,
+                        paddingHorizontal: 4,
+                        borderRadius: 8,
+                        backgroundColor: t.color.feedback.dangerFg,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}
+                >
+                    <Text
+                        style={{
+                            color: t.color.fg.onAccent,
+                            fontFamily: t.font.body,
+                            fontSize: 10,
+                            fontWeight: '700',
+                        }}
+                    >
+                        {badge > 9 ? '9+' : badge}
+                    </Text>
+                </View>
+            ) : null}
         </View>
-      )}
-    </View>
-  );
+    );
 }
 
 export default function TabsLayout() {
-  const negocio = useSesionStore((s) => s.negocio);
-  const esVendedor = negocio?.rol === 'VENDEDOR';
-  const pendingCount = useOfflineQueueStore(selectPendingCount);
+    const t = useTheme();
+    const insets = useSafeAreaInsets();
+    const negocio = useSesionStore((s) => s.negocio);
+    const esVendedor = negocio?.rol === 'VENDEDOR';
+    const pendingCount = useOfflineQueueStore(selectPendingCount);
 
-  return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: colors.accent,
-        tabBarInactiveTintColor: colors.textMuted,
-        tabBarStyle: {
-          backgroundColor: colors.surface,
-          borderTopColor: colors.border,
-        },
-        headerStyle: { backgroundColor: colors.surface },
-        headerTintColor: colors.text,
-      }}
-    >
-      <Tabs.Screen
-        name="pos"
-        options={{ title: 'POS', tabBarIcon: () => <TabIcon label="POS" /> }}
-      />
-      <Tabs.Screen
-        name="historial"
-        options={{ title: 'Historial', tabBarIcon: () => <TabIcon label="HX" /> }}
-      />
-      <Tabs.Screen
-        name="caja"
-        options={{ title: 'Caja', tabBarIcon: () => <TabIcon label="$$" /> }}
-      />
-      <Tabs.Screen
-        name="stock"
-        options={{
-          title: 'Stock',
-          tabBarIcon: () => <TabIcon label="STK" />,
-          href: esVendedor ? null : '/stock',
-        }}
-      />
-      <Tabs.Screen
-        name="pendientes"
-        options={{
-          title: 'Pendientes',
-          tabBarIcon: () => <TabIconConBadge label="SYNC" badge={pendingCount} />,
-          // Solo visible cuando hay operaciones encoladas.
-          // Cast: expo-router typed routes no regenera hasta rebuild.
-          href: (pendingCount > 0 ? '/pendientes' : null) as never,
-        }}
-      />
-      <Tabs.Screen
-        name="cuenta"
-        options={{ title: 'Cuenta', tabBarIcon: () => <TabIcon label="YO" /> }}
-      />
-    </Tabs>
-  );
+    return (
+        <Tabs
+            screenOptions={{
+                tabBarActiveTintColor: t.color.accent.default,
+                tabBarInactiveTintColor: t.color.fg.tertiary,
+                tabBarStyle: {
+                    backgroundColor: t.color.bg.raised,
+                    borderTopColor: t.color.border.subtle,
+                    borderTopWidth: t.border.default,
+                    height: 64 + insets.bottom,
+                    paddingTop: 6,
+                    paddingBottom: 8 + insets.bottom,
+                },
+                tabBarLabelStyle: {
+                    fontFamily: t.font.body,
+                    fontSize: 11,
+                    fontWeight: '600',
+                    letterSpacing: 0.2,
+                },
+                headerStyle: { backgroundColor: t.color.bg.raised },
+                headerTintColor: t.color.fg.primary,
+                headerTitleStyle: { fontFamily: t.font.display, fontWeight: '700' },
+            }}
+        >
+            <Tabs.Screen
+                name="pos"
+                options={{
+                    title: 'POS',
+                    headerShown: false,
+                    tabBarIcon: ({ color, size }) => <TabIcon name="cart-outline" color={color} size={size} />,
+                }}
+            />
+            <Tabs.Screen
+                name="historial"
+                options={{
+                    title: 'Historial',
+                    tabBarIcon: ({ color, size }) => <TabIcon name="time-outline" color={color} size={size} />,
+                }}
+            />
+            <Tabs.Screen
+                name="caja"
+                options={{
+                    title: 'Caja',
+                    tabBarIcon: ({ color, size }) => <TabIcon name="cash-outline" color={color} size={size} />,
+                }}
+            />
+            <Tabs.Screen
+                name="productos"
+                options={{
+                    title: 'Productos',
+                    tabBarIcon: ({ color, size }) => <TabIcon name="cube-outline" color={color} size={size} />,
+                    href: esVendedor ? null : '/productos',
+                }}
+            />
+            <Tabs.Screen
+                name="pendientes"
+                options={{
+                    title: 'Sync',
+                    tabBarIcon: ({ color, size }) => (
+                        <TabIconConBadge name="cloud-upload-outline" color={color} size={size} badge={pendingCount} />
+                    ),
+                    href: (pendingCount > 0 ? '/pendientes' : null) as never,
+                }}
+            />
+            <Tabs.Screen
+                name="cuenta"
+                options={{
+                    title: 'Cuenta',
+                    tabBarIcon: ({ color, size }) => <TabIcon name="person-outline" color={color} size={size} />,
+                }}
+            />
+        </Tabs>
+    );
 }

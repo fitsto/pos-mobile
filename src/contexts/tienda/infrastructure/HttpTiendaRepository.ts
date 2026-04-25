@@ -12,6 +12,7 @@ interface ApiNegocioDetalle {
   id: string;
   nombre: string;
   usarControlCaja: boolean;
+  impuestoVentaPorcentaje: number;
 }
 
 interface ApiMiembroMe {
@@ -55,12 +56,18 @@ export class HttpTiendaRepository implements TiendaRepository {
             }
           }
           let usarControlCaja = false;
+          // Default 19% para Chile si la tienda no expone el campo por
+          // cualquier motivo — evita NaN en cálculos de ganancia.
+          let impuestoVentaPorcentaje = 19;
           try {
             const det = await httpClient.get<ApiNegocioDetalle>(
               `/tiendas/${n.id}`,
               { token },
             );
             usarControlCaja = det.usarControlCaja === true;
+            if (typeof det.impuestoVentaPorcentaje === 'number') {
+              impuestoVentaPorcentaje = det.impuestoVentaPorcentaje;
+            }
           } catch {
             usarControlCaja = false;
           }
@@ -71,6 +78,7 @@ export class HttpTiendaRepository implements TiendaRepository {
             ubicacionId: miembro.ubicacionId,
             ubicacionNombre,
             usarControlCaja,
+            impuestoVentaPorcentaje,
           });
         } catch {
           return null;
