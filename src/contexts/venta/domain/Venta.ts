@@ -48,6 +48,8 @@ export interface VentaDetalle {
   ubicacionId: string;
   ubicacionNombre: string | null;
   usuarioId: string | null;
+  clienteNombre: string | null;
+  clienteRut: string | null;
   montoRecibido: number | null;
   vuelto: number | null;
   detalles: VentaDetalleItem[];

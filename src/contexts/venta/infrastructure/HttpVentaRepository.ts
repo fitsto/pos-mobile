@@ -64,6 +64,8 @@ interface ApiVentaDetalle {
   ubicacionId: string;
   ubicacionNombre: string | null;
   usuarioId: string | null;
+  clienteNombre: string | null;
+  clienteRut: string | null;
   montoRecibido: number | null;
   vuelto: number | null;
   detalles: ApiVentaDetalleItem[];
@@ -152,6 +154,8 @@ export class HttpVentaRepository implements VentaRepository {
       ubicacionId: raw.ubicacionId,
       ubicacionNombre: raw.ubicacionNombre,
       usuarioId: raw.usuarioId,
+      clienteNombre: raw.clienteNombre ?? null,
+      clienteRut: raw.clienteRut ?? null,
       montoRecibido: raw.montoRecibido != null ? Number(raw.montoRecibido) : null,
       vuelto: raw.vuelto != null ? Number(raw.vuelto) : null,
       detalles: raw.detalles.map((d) => ({

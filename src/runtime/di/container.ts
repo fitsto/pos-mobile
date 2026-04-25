@@ -17,6 +17,8 @@ import { ActivarProductoUseCase } from '../../contexts/producto/application/Acti
 import { BuscarProductoPorCodigoUseCase } from '../../contexts/producto/application/BuscarProductoPorCodigoUseCase';
 import { HttpCatalogoOpcionesRepository } from '../../contexts/producto/infrastructure/HttpCatalogoOpcionesRepository';
 import { ListarCategoriasYMarcasUseCase } from '../../contexts/producto/application/ListarCategoriasYMarcasUseCase';
+import { CrearCategoriaUseCase } from '../../contexts/producto/application/CrearCategoriaUseCase';
+import { CrearMarcaUseCase } from '../../contexts/producto/application/CrearMarcaUseCase';
 import { HttpProductoMaestroRepository } from '../../contexts/producto-maestro/infrastructure/HttpProductoMaestroRepository';
 import { BuscarProductoMaestroUseCase } from '../../contexts/producto-maestro/application/BuscarProductoMaestroUseCase';
 import { HttpVarianteRepository } from '../../contexts/producto/infrastructure/HttpVarianteRepository';
@@ -32,6 +34,7 @@ import { RegistrarMovimientoCajaUseCase } from '../../contexts/caja/application/
 import { ObtenerCajaActualUseCase } from '../../contexts/caja/application/ObtenerCajaActualUseCase';
 import { HttpAjusteInventarioRepository } from '../../contexts/ajuste-inventario/infrastructure/HttpAjusteInventarioRepository';
 import { RegistrarAjusteUseCase } from '../../contexts/ajuste-inventario/application/RegistrarAjusteUseCase';
+import { ListarMovimientosUseCase } from '../../contexts/ajuste-inventario/application/ListarMovimientosUseCase';
 import { HttpUbicacionRepository } from '../../contexts/ubicacion/infrastructure/HttpUbicacionRepository';
 import { ListarUbicacionesUseCase } from '../../contexts/ubicacion/application/ListarUbicacionesUseCase';
 import { HttpStockRepository } from '../../contexts/stock/infrastructure/HttpStockRepository';
@@ -71,6 +74,8 @@ export const container = {
   buscarProductoPorCodigo: new BuscarProductoPorCodigoUseCase(productoRepository),
   buscarProductoMaestro: new BuscarProductoMaestroUseCase(productoMaestroRepository),
   listarCategoriasYMarcas: new ListarCategoriasYMarcasUseCase(catalogoOpcionesRepository),
+  crearCategoria: new CrearCategoriaUseCase(catalogoOpcionesRepository),
+  crearMarca: new CrearMarcaUseCase(catalogoOpcionesRepository),
   listarVariantes: new ListarVariantesUseCase(varianteRepository),
   crearVenta: new CrearVentaUseCase(ventaRepository),
   listarVentas: new ListarVentasUseCase(ventaRepository),
@@ -80,6 +85,7 @@ export const container = {
   cerrarCaja: new CerrarCajaUseCase(cajaRepository),
   registrarMovimientoCaja: new RegistrarMovimientoCajaUseCase(cajaRepository),
   registrarAjusteStock: new RegistrarAjusteUseCase(ajusteRepository),
+  listarMovimientosInventario: new ListarMovimientosUseCase(ajusteRepository),
   listarUbicaciones: new ListarUbicacionesUseCase(ubicacionRepository),
   listarStockPorUbicacion: new ListarStockPorUbicacionUseCase(stockRepository),
   listarStockPorProducto: new ListarStockPorProductoUseCase(stockRepository),

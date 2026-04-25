@@ -49,6 +49,49 @@ export function validarRut(rutRaw: string): string {
   return `${cuerpo}-${dv.toUpperCase()}`;
 }
 
+/**
+ * Formatea un RUT mientras el usuario tipea: agrega puntos cada 3 dígitos del
+ * cuerpo y un guión antes del DV. Acepta entrada parcial (no exige DV).
+ *
+ * Reglas:
+ *   - Sólo se agrega `-DV` cuando el usuario realmente escribió un DV. Para
+ *     decidir eso usamos dos señales: (a) terminó en `K` (DV explícito), o
+ *     (b) ya escribió 9 caracteres (8 cuerpo + DV).
+ *   - Mientras el cuerpo todavía esté en construcción (≤ 8 dígitos sin K),
+ *     mostramos sólo dígitos con puntos, SIN guión. Así, al borrar, no se
+ *     "promueve" el último dígito a DV (lo que antes hacía que apareciera
+ *     un número distinto al usuario tras un backspace).
+ *
+ * Ejemplos:
+ *   - "12345678"  → "12.345.678"        (cuerpo en construcción)
+ *   - "123456789" → "12.345.678-9"      (DV detectado por largo)
+ *   - "12345678K" → "12.345.678-K"      (DV detectado por la K)
+ */
+export function formatearRutInput(raw: string): string {
+  if (!raw) return '';
+  // Sólo dígitos y K, todo en mayúsculas; el resto (incluido el guión) se
+  // descarta — lo regeneramos nosotros si corresponde.
+  const limpio = raw.toUpperCase().replace(/[^0-9K]/g, '');
+  if (limpio.length === 0) return '';
+
+  const terminaEnK = limpio.endsWith('K');
+  const tieneDv = terminaEnK || limpio.length >= 9;
+
+  if (!tieneDv) {
+    // Cuerpo en construcción: sólo agrupar dígitos con puntos.
+    const soloDigitos = limpio.replace(/[^0-9]/g, '').slice(0, 8);
+    if (soloDigitos.length === 0) return '';
+    return soloDigitos.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  }
+
+  // Cuerpo + DV. Limitamos cuerpo a 8 dígitos (RUT chileno max).
+  const cuerpoBruto = limpio.slice(0, -1).replace(/[^0-9]/g, '').slice(0, 8);
+  const dv = limpio.slice(-1);
+  if (cuerpoBruto.length === 0) return dv;
+  const cuerpoConPuntos = cuerpoBruto.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+  return `${cuerpoConPuntos}-${dv}`;
+}
+
 /** Versión no-throw. */
 export function esRutValido(rutRaw: string): boolean {
   try {

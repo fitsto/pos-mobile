@@ -2,7 +2,7 @@
  * Pantalla de cuenta: datos del operador + cambio de negocio + logout.
  * También permite alternar el modo de tema (light/dark/system).
  */
-import { View } from 'react-native';
+import { Linking, Pressable, View } from 'react-native';
 import { Button, Card, Chip, Screen, Text } from '../../src/runtime/components/ui';
 import { container } from '../../src/runtime/di/container';
 import { useSesionStore } from '../../src/runtime/stores/SesionStore';
@@ -74,6 +74,22 @@ export default function CuentaScreen() {
                     fullWidth
                 />
             </View>
+
+            <Text variant="label" tone="tertiary" style={{ marginTop: t.space['6'], marginBottom: t.space['2'] }}>
+                ATRIBUCIONES
+            </Text>
+            <Card variant="subtle" padding={4}>
+                <Text variant="bodySm" tone="secondary">
+                    Información de productos (nombre, marca, imagen) provista por{' '}
+                    <Pressable onPress={() => Linking.openURL('https://world.openfoodfacts.org')}>
+                        <Text variant="bodySm" style={{ textDecorationLine: 'underline' }}>
+                            Open Food Facts
+                        </Text>
+                    </Pressable>
+                    , bajo licencia ODbL. Los datos pueden ser editados por la comunidad y no
+                    son responsabilidad de esta aplicación.
+                </Text>
+            </Card>
         </Screen>
     );
 }

@@ -2,6 +2,7 @@ import { httpClient } from '../../shared/infrastructure/http/HttpClient';
 import type { Categoria, Marca } from '../domain/Categoria';
 import type {
   CatalogoOpcionesRepository,
+  CrearOpcionParams,
   ListarParams,
 } from '../domain/CatalogoOpcionesRepository';
 
@@ -30,5 +31,23 @@ export class HttpCatalogoOpcionesRepository implements CatalogoOpcionesRepositor
       { token },
     );
     return raw.map((m) => ({ id: m.id, nombre: m.nombre }));
+  }
+
+  async crearCategoria({ negocioId, token, nombre }: CrearOpcionParams): Promise<Categoria> {
+    const raw = await httpClient.post<ApiCategoria>(
+      `/tiendas/${negocioId}/categorias`,
+      { nombre },
+      { token },
+    );
+    return { id: raw.id, nombre: raw.nombre };
+  }
+
+  async crearMarca({ negocioId, token, nombre }: CrearOpcionParams): Promise<Marca> {
+    const raw = await httpClient.post<ApiMarca>(
+      `/tiendas/${negocioId}/marcas`,
+      { nombre },
+      { token },
+    );
+    return { id: raw.id, nombre: raw.nombre };
   }
 }

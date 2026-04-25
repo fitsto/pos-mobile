@@ -3,7 +3,8 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useState } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
@@ -82,9 +83,13 @@ export default function HistorialScreen() {
         }
     }, [sesion, negocio]);
 
-    useEffect(() => {
-        cargar();
-    }, [cargar]);
+    // Refrescamos al enfocar la pestaña: tras hacer una venta y volver al
+    // historial, queremos que la nueva venta aparezca sin recarga manual.
+    useFocusEffect(
+        useCallback(() => {
+            cargar();
+        }, [cargar]),
+    );
 
     const onRefresh = async () => {
         setRefrescando(true);
@@ -242,6 +247,18 @@ export default function HistorialScreen() {
                                 <View style={{ height: 1, backgroundColor: t.color.border.subtle, marginVertical: t.space['3'] }} />
                                 <Text variant="label" tone="tertiary">UBICACIÓN</Text>
                                 <Text variant="bodyMd" style={{ marginTop: 2 }}>{detalle.ubicacionNombre ?? '—'}</Text>
+                                {detalle.clienteNombre ? (
+                                    <>
+                                        <View style={{ height: 1, backgroundColor: t.color.border.subtle, marginVertical: t.space['3'] }} />
+                                        <Text variant="label" tone="tertiary">CLIENTE</Text>
+                                        <Text variant="bodyMd" style={{ marginTop: 2 }}>{detalle.clienteNombre}</Text>
+                                        {detalle.clienteRut ? (
+                                            <Text variant="bodySm" tone="tertiary" style={{ marginTop: 2 }}>
+                                                {detalle.clienteRut}
+                                            </Text>
+                                        ) : null}
+                                    </>
+                                ) : null}
                             </Card>
 
                             <Text variant="label" tone="tertiary" style={{ marginTop: t.space['2'] }}>PRODUCTOS</Text>

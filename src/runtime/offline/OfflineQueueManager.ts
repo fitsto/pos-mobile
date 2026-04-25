@@ -37,6 +37,9 @@ export async function initOfflineQueue(): Promise<void> {
   if (inited) return;
   inited = true;
   await repo.init();
+  // Si la app murió mientras una op estaba 'syncing', queda atascada en ese
+  // estado para siempre (no aparece en listByStatus('pending')). La rescatamos.
+  await repo.resetStaleSyncing();
   await refreshStore();
 
   netInfoUnsubscribe = NetInfo.addEventListener((state) => {
@@ -73,6 +76,9 @@ export async function tryDrainQueue(): Promise<void> {
 
   useOfflineQueueStore.getState().setSincronizando(true);
   try {
+    // Recovery defensivo antes de drenar: si quedó alguna 'syncing' atascada
+    // de una corrida anterior, la traemos de vuelta al pool de 'pending'.
+    await repo.resetStaleSyncing();
     await syncUseCase.execute({
       token,
       onProgress: () => {
@@ -114,12 +120,16 @@ export async function executeOrEnqueue(params: {
     lastAttemptAt: null,
   };
 
-  // Si ya hay cola o estamos offline: encolamos sin intentar online, para no
-  // salir de orden (una op nueva podría depender del stock que dejaron ops previas).
+  // Si ya hay cola activa o estamos offline: encolamos sin intentar online,
+  // para no salir de orden (una op nueva podría depender del stock que dejaron
+  // ops previas). Las ops 'failed' no cuentan: están atascadas hasta que el
+  // usuario las descarte/reintente, no tiene sentido bloquear ventas nuevas
+  // por algo que ya falló permanentemente.
   const existing = await repo.list();
+  const activas = existing.filter((o) => o.status !== 'failed');
   const online = useOfflineQueueStore.getState().online !== false;
 
-  if (!online || existing.length > 0) {
+  if (!online || activas.length > 0) {
     await repo.enqueue(op);
     await refreshStore();
     // Si hay red, intentamos drenar ya mismo (incluyendo la nueva).

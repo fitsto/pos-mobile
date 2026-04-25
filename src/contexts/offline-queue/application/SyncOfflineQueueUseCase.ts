@@ -74,8 +74,9 @@ export class SyncOfflineQueueUseCase {
           await this.repo.markFailed(op.id, msg);
           failed += 1;
         } else {
-          // Network error o 5xx → dejar pendiente para próximo intento.
-          await this.repo.markPending(op.id);
+          // Network error o 5xx → dejar pendiente para próximo intento, pero
+          // guardamos el último error para que el usuario sepa qué pasó.
+          await this.repo.markPending(op.id, msg);
         }
         options.onProgress?.();
       }

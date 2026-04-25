@@ -15,9 +15,11 @@
  * se construyan sus vistas dedicadas.
  */
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, View } from 'react-native';
+import type { MovimientoInventarioData } from '../../src/contexts/ajuste-inventario/domain/AjusteInventarioRepository';
+import { etiquetaMotivo, type MotivoAjuste } from '../../src/contexts/ajuste-inventario/domain/MotivoAjuste';
 import type { Producto } from '../../src/contexts/producto/domain/Producto';
 import { ImagenProductoPicker } from '../../src/runtime/components/ImagenProductoPicker';
 import {
@@ -80,6 +82,23 @@ export default function ProductoDetalleScreen() {
         { ubicacionId: string; ubicacionNombre: string; cantidad: number }[] | null
     >(null);
     const [cargandoStock, setCargandoStock] = useState(false);
+
+    // Historial — se carga al entrar a la tab. Igual que stock: lazy + recarga
+    // cada vez que se vuelve a abrir, así refleja ajustes / ventas recientes.
+    const [movimientos, setMovimientos] = useState<MovimientoInventarioData[] | null>(null);
+    const [ubicacionesNombres, setUbicacionesNombres] = useState<Map<string, string>>(new Map());
+    const [cargandoHistorial, setCargandoHistorial] = useState(false);
+
+    // Cada vez que la pantalla recupera el foco (p.ej. tras volver de
+    // /producto/ajustar), incrementamos este contador para forzar la
+    // recarga de Stock e Historial — son las dos tabs cuyo dato puede
+    // haber cambiado mientras estuvimos navegando fuera.
+    const [refreshTick, setRefreshTick] = useState(0);
+    useFocusEffect(
+        useCallback(() => {
+            setRefreshTick((v) => v + 1);
+        }, []),
+    );
 
     const cargar = useCallback(async () => {
         if (!sesion || !negocio || !id) return;
@@ -158,7 +177,39 @@ export default function ProductoDetalleScreen() {
         return () => {
             cancelado = true;
         };
-    }, [tab, sesion, negocio, id]);
+    }, [tab, sesion, negocio, id, refreshTick]);
+
+    useEffect(() => {
+        if (tab !== 'historial' || !sesion || !negocio || !id) return;
+        let cancelado = false;
+        setCargandoHistorial(true);
+        Promise.all([
+            container.listarMovimientosInventario.execute({
+                negocioId: negocio.id,
+                productoId: id,
+                limit: 100,
+                token: sesion.token,
+            }),
+            container.listarUbicaciones.execute({
+                negocioId: negocio.id,
+                token: sesion.token,
+            }),
+        ])
+            .then(([movs, ubicaciones]) => {
+                if (cancelado) return;
+                setUbicacionesNombres(new Map(ubicaciones.map((u) => [u.id, u.nombre])));
+                setMovimientos(movs);
+            })
+            .catch(() => {
+                if (!cancelado) setMovimientos([]);
+            })
+            .finally(() => {
+                if (!cancelado) setCargandoHistorial(false);
+            });
+        return () => {
+            cancelado = true;
+        };
+    }, [tab, sesion, negocio, id, refreshTick]);
 
     useEffect(() => {
         if (!ok) return;
@@ -678,18 +729,45 @@ export default function ProductoDetalleScreen() {
                                             color={t.color.fg.onAccent}
                                         />
                                     }
-                                    onPress={() => router.push('/producto/ajustar')}
+                                    onPress={() => router.push(`/producto/ajustar?productoId=${id}`)}
                                     fullWidth
                                 />
                             ) : null}
                         </View>
                     )
                 ) : (
-                    <EmptyState
-                        icon={<Ionicons name="time-outline" size={48} color={t.color.fg.tertiary} />}
-                        title="Historial"
-                        description="Muy pronto: movimientos de stock, ventas y ajustes del producto."
-                    />
+                    cargandoHistorial ? (
+                        <View style={{ paddingVertical: t.space['8'], alignItems: 'center' }}>
+                            <ActivityIndicator color={t.color.accent.default} />
+                        </View>
+                    ) : !movimientos || movimientos.length === 0 ? (
+                        <EmptyState
+                            icon={<Ionicons name="time-outline" size={48} color={t.color.fg.tertiary} />}
+                            title="Sin movimientos"
+                            description="Cuando registres ventas o ajustes de este producto van a aparecer acá."
+                        />
+                    ) : (
+                        <View
+                            style={{
+                                borderRadius: t.radius.lg,
+                                borderWidth: t.border.default,
+                                borderColor: t.color.border.subtle,
+                                backgroundColor: t.color.bg.raised,
+                                overflow: 'hidden',
+                            }}
+                        >
+                            {movimientos.map((m, idx) => (
+                                <MovimientoRow
+                                    key={m.id}
+                                    movimiento={m}
+                                    ubicacionNombre={
+                                        ubicacionesNombres.get(m.ubicacionId) ?? 'Ubicación desconocida'
+                                    }
+                                    primero={idx === 0}
+                                />
+                            ))}
+                        </View>
+                    )
                 )}
             </ScrollView>
         </Screen>
@@ -788,6 +866,118 @@ function Row({ label, valor }: { label: string; valor: string }) {
             <Text variant="monoMd" tabular style={{ color: t.color.fg.primary }}>
                 {valor}
             </Text>
+        </View>
+    );
+}
+
+function formatFechaMovimiento(iso: string): string {
+    const d = new Date(iso);
+    return d.toLocaleString('es-CL', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+    });
+}
+
+/**
+ * Fila del historial de movimientos del producto. Muestra:
+ *   - Ícono según tipo (venta = carrito, ajuste = swap)
+ *   - Etiqueta: "Venta" o el motivo del ajuste traducido
+ *   - Cantidad con signo y color según dirección
+ *   - Ubicación + fecha en una segunda línea más sutil
+ *   - Comentario si lo hay
+ */
+function MovimientoRow({
+    movimiento,
+    ubicacionNombre,
+    primero,
+}: {
+    movimiento: MovimientoInventarioData;
+    ubicacionNombre: string;
+    primero: boolean;
+}) {
+    const t = useTheme();
+    const esVenta = movimiento.tipo === 'VENTA';
+    const entrada = movimiento.cantidad > 0;
+    // Las ventas siempre son salidas — pintamos en gris neutro porque
+    // restar stock por venta no es algo "negativo". Los ajustes los
+    // coloreamos para que se vean a primera vista los movimientos
+    // anómalos (mermas, robos) en rojo, y los restock en verde.
+    const colorCantidad = esVenta
+        ? t.color.fg.primary
+        : entrada
+            ? t.color.feedback.successFg
+            : t.color.feedback.dangerFg;
+
+    const etiqueta = esVenta
+        ? 'Venta'
+        : movimiento.motivo
+            ? etiquetaMotivo[movimiento.motivo as MotivoAjuste] ?? movimiento.motivo
+            : 'Ajuste';
+
+    const iconoNombre = esVenta ? 'cart-outline' : entrada ? 'arrow-down' : 'arrow-up';
+    const iconoColor = esVenta
+        ? t.color.fg.tertiary
+        : entrada
+            ? t.color.feedback.successFg
+            : t.color.feedback.dangerFg;
+
+    return (
+        <View
+            style={{
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+                gap: t.space['3'],
+                paddingHorizontal: t.space['4'],
+                paddingVertical: t.space['3'],
+                borderTopWidth: primero ? 0 : t.border.default,
+                borderTopColor: t.color.border.subtle,
+            }}
+        >
+            <View
+                style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: t.color.bg.sunken,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                }}
+            >
+                <Ionicons name={iconoNombre} size={18} color={iconoColor} />
+            </View>
+            <View style={{ flex: 1, gap: 2 }}>
+                <View
+                    style={{
+                        flexDirection: 'row',
+                        justifyContent: 'space-between',
+                        alignItems: 'baseline',
+                        gap: t.space['2'],
+                    }}
+                >
+                    <Text variant="bodyMd" emphasized numberOfLines={1} style={{ flex: 1 }}>
+                        {etiqueta}
+                    </Text>
+                    <Text
+                        variant="monoMd"
+                        tabular
+                        emphasized
+                        style={{ color: colorCantidad }}
+                    >
+                        {entrada ? '+' : ''}{movimiento.cantidad}
+                    </Text>
+                </View>
+                <Text variant="bodySm" tone="tertiary" numberOfLines={1}>
+                    {ubicacionNombre} · {formatFechaMovimiento(movimiento.createdAt)}
+                </Text>
+                {movimiento.comentario ? (
+                    <Text variant="bodySm" tone="secondary" style={{ marginTop: 2 }} numberOfLines={2}>
+                        {movimiento.comentario}
+                    </Text>
+                ) : null}
+            </View>
         </View>
     );
 }

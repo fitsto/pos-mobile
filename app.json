@@ -25,7 +25,8 @@
           "photosPermission": "La app necesita acceso a tu galería para elegir fotos de productos.",
           "cameraPermission": "La app necesita la cámara para tomar fotos de productos."
         }
-      ]
+      ],
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true

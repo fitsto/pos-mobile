@@ -25,6 +25,8 @@ function tipoLabel(t: PendingOperation['type']): string {
             return 'Ajuste de stock';
         case 'TRANSFERIR_STOCK':
             return 'Transferencia de stock';
+        case 'VENTA_PRESENCIAL':
+            return 'Venta presencial';
         default:
             return t;
     }

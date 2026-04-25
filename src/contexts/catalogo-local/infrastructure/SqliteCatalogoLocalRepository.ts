@@ -17,6 +17,19 @@ const DB_NAME = 'catalogo_local.db';
 const KEY_LAST_SYNC = 'lastSyncAt';
 const KEY_UBICACION = 'ubicacionId';
 const KEY_CONFIG = 'config';
+const KEY_SCHEMA_VERSION = 'schemaVersion';
+
+/**
+ * Versión lógica del schema/datos del catálogo local. Bumpear cuando se
+ * agregan campos cuyo backfill no es posible vía diff (porque las filas
+ * existentes no van a aparecer en el próximo diff). El guard en init()
+ * limpia `lastSyncAt` y dispara un re-snapshot.
+ *
+ * Historial:
+ *   1: inicial
+ *   2: agregado `imagen_url` en productos.
+ */
+const CURRENT_SCHEMA_VERSION = '2';
 
 interface ProductoRow {
   id: string;
@@ -205,51 +218,89 @@ export class SqliteCatalogoLocalRepository implements CatalogoLocalRepository {
     // Migración aditiva: si la app venía corriendo con un schema viejo, le
     // agregamos la columna nueva. SQLite no tiene "ADD COLUMN IF NOT EXISTS"
     // así que detectamos via PRAGMA antes de intentar.
-    await this.ensureColumn(db, 'productos', 'imagen_url', 'TEXT');
+    const seAgregoImagen = await this.ensureColumn(db, 'productos', 'imagen_url', 'TEXT');
+
+    // Si recién agregamos `imagen_url`, las filas existentes la tienen `null`
+    // y la próxima sync sería un diff (sólo trae productos con updatedAt
+    // posterior al último sync) → las imágenes nunca llegarían. Forzamos una
+    // re-sincronización inicial limpiando lastSyncAt.
+    if (seAgregoImagen) {
+      await db.runAsync(`DELETE FROM sync_meta WHERE key = ?`, KEY_LAST_SYNC);
+    }
+
+    // Guard adicional por si la columna ya fue creada en una corrida anterior
+    // pero los datos viejos quedaron sin imagen_url (porque el diff no los
+    // re-trajo): si la versión guardada no coincide con la actual, también
+    // forzamos full sync. Una sola vez por bump.
+    const versionGuardada = await this.getMeta(KEY_SCHEMA_VERSION);
+    if (versionGuardada !== CURRENT_SCHEMA_VERSION) {
+      await db.runAsync(`DELETE FROM sync_meta WHERE key = ?`, KEY_LAST_SYNC);
+      await this.setMeta(KEY_SCHEMA_VERSION, CURRENT_SCHEMA_VERSION);
+    }
   }
 
+  /** Devuelve true si tuvo que crear la columna (no existía). */
   private async ensureColumn(
     db: SQLite.SQLiteDatabase,
     table: string,
     column: string,
     type: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const cols = await db.getAllAsync<{ name: string }>(
       `PRAGMA table_info(${table})`,
     );
-    if (cols.some((c) => c.name === column)) return;
+    if (cols.some((c) => c.name === column)) return false;
     await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    return true;
   }
 
   async buscarProductos({
     q,
     ubicacionId,
     limit = 50,
+    categoriaIds,
+    marcaIds,
+    soloConStock,
   }: BuscarProductosLocalParams): Promise<ProductoLocalConStock[]> {
     const db = await this.getDb();
     const texto = q.trim();
-    let rows: ProductoRow[];
-    if (texto.length === 0) {
-      rows = await db.getAllAsync<ProductoRow>(
-        `SELECT * FROM productos WHERE activo = 1 ORDER BY nombre LIMIT ?`,
-        limit,
-      );
-    } else {
+
+    // Construimos la cláusula WHERE de manera dinámica para soportar todos los
+    // filtros opcionales (texto + categorías + marcas). El stock se filtra en
+    // un segundo paso porque depende del agregado por ubicación.
+    const where: string[] = ['activo = 1'];
+    const args: (string | number)[] = [];
+
+    if (texto.length > 0) {
       const like = `%${texto}%`;
-      rows = await db.getAllAsync<ProductoRow>(
-        `SELECT * FROM productos
-         WHERE activo = 1
-           AND (nombre LIKE ? OR codigo_interno LIKE ? OR codigo_barra LIKE ?
-                OR id IN (SELECT producto_id FROM variantes WHERE sku LIKE ? OR codigo_barra LIKE ?))
-         ORDER BY nombre LIMIT ?`,
-        like,
-        like,
-        like,
-        like,
-        like,
-        limit,
+      where.push(
+        `(nombre LIKE ? OR codigo_interno LIKE ? OR codigo_barra LIKE ?
+          OR id IN (SELECT producto_id FROM variantes WHERE sku LIKE ? OR codigo_barra LIKE ?))`,
       );
+      args.push(like, like, like, like, like);
     }
+
+    if (categoriaIds && categoriaIds.length > 0) {
+      const placeholders = categoriaIds.map(() => '?').join(',');
+      where.push(`categoria_id IN (${placeholders})`);
+      args.push(...categoriaIds);
+    }
+
+    if (marcaIds && marcaIds.length > 0) {
+      const placeholders = marcaIds.map(() => '?').join(',');
+      where.push(`marca_id IN (${placeholders})`);
+      args.push(...marcaIds);
+    }
+
+    // Pedimos un margen extra cuando filtramos por stock para compensar las
+    // filas que se descartan después; mejor que paginar exacto y quedarte corto.
+    const sqlLimit = soloConStock ? limit * 3 : limit;
+    args.push(sqlLimit);
+
+    const rows = await db.getAllAsync<ProductoRow>(
+      `SELECT * FROM productos WHERE ${where.join(' AND ')} ORDER BY nombre LIMIT ?`,
+      ...args,
+    );
 
     if (rows.length === 0) return [];
     const ids = rows.map((r) => r.id);
@@ -270,7 +321,7 @@ export class SqliteCatalogoLocalRepository implements CatalogoLocalRepository {
     );
     const conVar = new Set(variantesRows.map((v) => v.producto_id));
 
-    return rows.map((r) => {
+    const resultado = rows.map((r) => {
       const producto = rowToProducto(r);
       return {
         producto,
@@ -278,6 +329,36 @@ export class SqliteCatalogoLocalRepository implements CatalogoLocalRepository {
         tieneVariantes: conVar.has(r.id) || producto.usaVariantes,
       };
     });
+
+    if (soloConStock) {
+      // Filtramos en memoria porque SUM(cantidad) puede ser 0 sin que el
+      // producto deje de existir, y queremos que el catálogo del POS sólo
+      // muestre lo que el cajero puede vender.
+      return resultado.filter((p) => p.stockAgregado > 0).slice(0, limit);
+    }
+    return resultado.slice(0, limit);
+  }
+
+  async listarCategoriasUsadas(): Promise<{ id: string; nombre: string }[]> {
+    const db = await this.getDb();
+    return db.getAllAsync<{ id: string; nombre: string }>(
+      `SELECT c.id, c.nombre FROM categorias c
+       WHERE EXISTS (
+         SELECT 1 FROM productos p WHERE p.categoria_id = c.id AND p.activo = 1
+       )
+       ORDER BY c.nombre`,
+    );
+  }
+
+  async listarMarcasUsadas(): Promise<{ id: string; nombre: string }[]> {
+    const db = await this.getDb();
+    return db.getAllAsync<{ id: string; nombre: string }>(
+      `SELECT m.id, m.nombre FROM marcas m
+       WHERE EXISTS (
+         SELECT 1 FROM productos p WHERE p.marca_id = m.id AND p.activo = 1
+       )
+       ORDER BY m.nombre`,
+    );
   }
 
   async findProductoById(id: string): Promise<CatalogoProducto | null> {

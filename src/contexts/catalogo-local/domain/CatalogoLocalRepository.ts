@@ -20,6 +20,12 @@ export interface BuscarProductosLocalParams {
   q: string;
   ubicacionId: string;
   limit?: number;
+  /** Filtra a productos cuya `categoriaId` esté en el array. Vacío/undefined = sin filtro. */
+  categoriaIds?: string[];
+  /** Filtra a productos cuya `marcaId` esté en el array. Vacío/undefined = sin filtro. */
+  marcaIds?: string[];
+  /** Si true, solo devuelve productos con stockAgregado > 0 en la ubicación. */
+  soloConStock?: boolean;
 }
 
 export interface CatalogoLocalRepository {
@@ -28,6 +34,12 @@ export interface CatalogoLocalRepository {
 
   /** Busca productos por nombre/codigoInterno/codigoBarra y devuelve stock de ubicación. */
   buscarProductos(params: BuscarProductosLocalParams): Promise<ProductoLocalConStock[]>;
+
+  /** Categorías que efectivamente tienen al menos un producto activo asignado. */
+  listarCategoriasUsadas(): Promise<{ id: string; nombre: string }[]>;
+
+  /** Marcas que efectivamente tienen al menos un producto activo asignado. */
+  listarMarcasUsadas(): Promise<{ id: string; nombre: string }[]>;
 
   findProductoById(id: string): Promise<CatalogoProducto | null>;
 

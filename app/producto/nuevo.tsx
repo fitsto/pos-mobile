@@ -75,6 +75,13 @@ export default function NuevoProductoScreen() {
     // Picker abierto: 'categoria' | 'marca' | null. Una sola variable mantiene
     // la mutua exclusión sin tener que sincronizar dos booleanos.
     const [pickerAbierto, setPickerAbierto] = useState<'categoria' | 'marca' | null>(null);
+    // Mini-form inline para crear cat/marca dentro del mismo sheet, sin
+    // sacar al usuario del flujo. Si `creandoOpcionTipo` está seteado, el
+    // sheet del tipo correspondiente muestra un input en lugar de la lista.
+    const [creandoOpcionTipo, setCreandoOpcionTipo] = useState<'categoria' | 'marca' | null>(null);
+    const [nuevaOpcionNombre, setNuevaOpcionNombre] = useState('');
+    const [guardandoOpcion, setGuardandoOpcion] = useState(false);
+    const [errorOpcion, setErrorOpcion] = useState<string | null>(null);
     // Paso 3
     const [usaVariantes, setUsaVariantes] = useState(false);
 
@@ -278,6 +285,53 @@ export default function NuevoProductoScreen() {
     const ingresarManual = () => {
         setError(null);
         setPaso(1);
+    };
+
+    const resetFormOpcion = () => {
+        setCreandoOpcionTipo(null);
+        setNuevaOpcionNombre('');
+        setErrorOpcion(null);
+        setGuardandoOpcion(false);
+    };
+
+    const cerrarPicker = () => {
+        setPickerAbierto(null);
+        resetFormOpcion();
+    };
+
+    const crearOpcion = async () => {
+        if (!sesion || !negocio || !creandoOpcionTipo) return;
+        const nombreLimpio = nuevaOpcionNombre.trim();
+        if (nombreLimpio.length === 0) {
+            setErrorOpcion('Ingresa un nombre.');
+            return;
+        }
+        setErrorOpcion(null);
+        setGuardandoOpcion(true);
+        try {
+            if (creandoOpcionTipo === 'categoria') {
+                const nueva = await container.crearCategoria.execute({
+                    negocioId: negocio.id,
+                    token: sesion.token,
+                    nombre: nombreLimpio,
+                });
+                setOpcionesCategorias((prev) => [...prev, nueva]);
+                setCategoriaId(nueva.id);
+            } else {
+                const nueva = await container.crearMarca.execute({
+                    negocioId: negocio.id,
+                    token: sesion.token,
+                    nombre: nombreLimpio,
+                });
+                setOpcionesMarcas((prev) => [...prev, nueva]);
+                setMarcaId(nueva.id);
+            }
+            cerrarPicker();
+        } catch (e) {
+            setErrorOpcion(e instanceof Error ? e.message : 'No se pudo crear.');
+        } finally {
+            setGuardandoOpcion(false);
+        }
     };
 
     const crear = async () => {
@@ -507,31 +561,29 @@ export default function NuevoProductoScreen() {
                 ) : paso === 2 ? (
                     <>
                         <SelectorRef
-                            label="Categoría"
+                            label="Categoría (opcional)"
                             valor={
                                 opcionesCategorias.find((c) => c.id === categoriaId)?.nombre ??
                                 null
                             }
                             placeholder={
                                 opcionesCategorias.length === 0
-                                    ? 'Aún no tienes categorías'
+                                    ? 'Tocar para crear o dejar sin categoría'
                                     : 'Sin categoría'
                             }
-                            disabled={opcionesCategorias.length === 0}
                             onPress={() => setPickerAbierto('categoria')}
                             onClear={categoriaId ? () => setCategoriaId(null) : undefined}
                         />
                         <SelectorRef
-                            label="Marca"
+                            label="Marca (opcional)"
                             valor={
                                 opcionesMarcas.find((m) => m.id === marcaId)?.nombre ?? null
                             }
                             placeholder={
                                 opcionesMarcas.length === 0
-                                    ? 'Aún no tienes marcas'
+                                    ? 'Tocar para crear o dejar sin marca'
                                     : 'Sin marca'
                             }
-                            disabled={opcionesMarcas.length === 0}
                             onPress={() => setPickerAbierto('marca')}
                             onClear={marcaId ? () => setMarcaId(null) : undefined}
                         />
@@ -598,76 +650,160 @@ export default function NuevoProductoScreen() {
 
             <Sheet
                 visible={pickerAbierto === 'categoria'}
-                onClose={() => setPickerAbierto(null)}
+                onClose={cerrarPicker}
                 title="Elegir categoría"
             >
-                <ScrollView style={{ maxHeight: 360 }}>
-                    <ListItem
-                        title="Sin categoría"
-                        onPress={() => {
-                            setCategoriaId(null);
-                            setPickerAbierto(null);
-                        }}
-                        divider
-                    />
-                    {opcionesCategorias.map((c) => (
+                {creandoOpcionTipo === 'categoria' ? (
+                    <View style={{ gap: t.space['3'] }}>
+                        <TextField
+                            label="Nombre de la categoría"
+                            value={nuevaOpcionNombre}
+                            onChangeText={setNuevaOpcionNombre}
+                            placeholder="Ej: Bebidas"
+                            autoFocus
+                        />
+                        {errorOpcion ? (
+                            <Text variant="bodySm" tone="danger">
+                                {errorOpcion}
+                            </Text>
+                        ) : null}
+                        <View style={{ flexDirection: 'row', gap: t.space['2'] }}>
+                            <Button
+                                label="Cancelar"
+                                variant="secondary"
+                                onPress={resetFormOpcion}
+                                disabled={guardandoOpcion}
+                                style={{ flex: 1 }}
+                            />
+                            <Button
+                                label="Crear"
+                                onPress={crearOpcion}
+                                loading={guardandoOpcion}
+                                disabled={guardandoOpcion}
+                                style={{ flex: 1 }}
+                            />
+                        </View>
+                    </View>
+                ) : (
+                    <ScrollView style={{ maxHeight: 360 }}>
                         <ListItem
-                            key={c.id}
-                            title={c.nombre}
-                            trailing={
-                                categoriaId === c.id ? (
-                                    <Ionicons
-                                        name="checkmark"
-                                        size={20}
-                                        color={t.color.accent.default}
-                                    />
-                                ) : null
-                            }
+                            title="+ Crear nueva categoría"
                             onPress={() => {
-                                setCategoriaId(c.id);
-                                setPickerAbierto(null);
+                                setCreandoOpcionTipo('categoria');
+                                setNuevaOpcionNombre('');
+                                setErrorOpcion(null);
                             }}
                             divider
                         />
-                    ))}
-                </ScrollView>
+                        <ListItem
+                            title="Sin categoría"
+                            onPress={() => {
+                                setCategoriaId(null);
+                                cerrarPicker();
+                            }}
+                            divider
+                        />
+                        {opcionesCategorias.map((c) => (
+                            <ListItem
+                                key={c.id}
+                                title={c.nombre}
+                                trailing={
+                                    categoriaId === c.id ? (
+                                        <Ionicons
+                                            name="checkmark"
+                                            size={20}
+                                            color={t.color.accent.default}
+                                        />
+                                    ) : null
+                                }
+                                onPress={() => {
+                                    setCategoriaId(c.id);
+                                    cerrarPicker();
+                                }}
+                                divider
+                            />
+                        ))}
+                    </ScrollView>
+                )}
             </Sheet>
 
             <Sheet
                 visible={pickerAbierto === 'marca'}
-                onClose={() => setPickerAbierto(null)}
+                onClose={cerrarPicker}
                 title="Elegir marca"
             >
-                <ScrollView style={{ maxHeight: 360 }}>
-                    <ListItem
-                        title="Sin marca"
-                        onPress={() => {
-                            setMarcaId(null);
-                            setPickerAbierto(null);
-                        }}
-                        divider
-                    />
-                    {opcionesMarcas.map((m) => (
+                {creandoOpcionTipo === 'marca' ? (
+                    <View style={{ gap: t.space['3'] }}>
+                        <TextField
+                            label="Nombre de la marca"
+                            value={nuevaOpcionNombre}
+                            onChangeText={setNuevaOpcionNombre}
+                            placeholder="Ej: Coca-Cola"
+                            autoFocus
+                        />
+                        {errorOpcion ? (
+                            <Text variant="bodySm" tone="danger">
+                                {errorOpcion}
+                            </Text>
+                        ) : null}
+                        <View style={{ flexDirection: 'row', gap: t.space['2'] }}>
+                            <Button
+                                label="Cancelar"
+                                variant="secondary"
+                                onPress={resetFormOpcion}
+                                disabled={guardandoOpcion}
+                                style={{ flex: 1 }}
+                            />
+                            <Button
+                                label="Crear"
+                                onPress={crearOpcion}
+                                loading={guardandoOpcion}
+                                disabled={guardandoOpcion}
+                                style={{ flex: 1 }}
+                            />
+                        </View>
+                    </View>
+                ) : (
+                    <ScrollView style={{ maxHeight: 360 }}>
                         <ListItem
-                            key={m.id}
-                            title={m.nombre}
-                            trailing={
-                                marcaId === m.id ? (
-                                    <Ionicons
-                                        name="checkmark"
-                                        size={20}
-                                        color={t.color.accent.default}
-                                    />
-                                ) : null
-                            }
+                            title="+ Crear nueva marca"
                             onPress={() => {
-                                setMarcaId(m.id);
-                                setPickerAbierto(null);
+                                setCreandoOpcionTipo('marca');
+                                setNuevaOpcionNombre('');
+                                setErrorOpcion(null);
                             }}
                             divider
                         />
-                    ))}
-                </ScrollView>
+                        <ListItem
+                            title="Sin marca"
+                            onPress={() => {
+                                setMarcaId(null);
+                                cerrarPicker();
+                            }}
+                            divider
+                        />
+                        {opcionesMarcas.map((m) => (
+                            <ListItem
+                                key={m.id}
+                                title={m.nombre}
+                                trailing={
+                                    marcaId === m.id ? (
+                                        <Ionicons
+                                            name="checkmark"
+                                            size={20}
+                                            color={t.color.accent.default}
+                                        />
+                                    ) : null
+                                }
+                                onPress={() => {
+                                    setMarcaId(m.id);
+                                    cerrarPicker();
+                                }}
+                                divider
+                            />
+                        ))}
+                    </ScrollView>
+                )}
             </Sheet>
         </Screen>
     );

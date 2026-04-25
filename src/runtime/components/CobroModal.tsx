@@ -36,6 +36,17 @@ export function CobroModal({ visible, carrito, onClose, onConfirmar }: Props) {
         const n = Number(montoRecibidoRaw.replace(/[^\d]/g, ''));
         return Number.isFinite(n) ? n : 0;
     }, [montoRecibidoRaw]);
+    // Mostrar el monto formateado con separador de miles para que el cajero
+    // no se confunda con la cantidad de ceros (10000 → "10.000").
+    const montoRecibidoDisplay = useMemo(
+        () => (montoRecibido > 0 ? montoRecibido.toLocaleString('es-CL') : ''),
+        [montoRecibido],
+    );
+    const handleMontoChange = (texto: string) => {
+        // Solo dígitos: ignora puntos/comas que pueda tipear el usuario.
+        const soloDigitos = texto.replace(/[^\d]/g, '');
+        setMontoRecibidoRaw(soloDigitos);
+    };
     const vuelto = medio === MedioPago.EFECTIVO ? montoRecibido - total : 0;
     const puedeCobrar =
         !enviando && (medio !== MedioPago.EFECTIVO || montoRecibido >= total);
@@ -131,8 +142,8 @@ export function CobroModal({ visible, carrito, onClose, onConfirmar }: Props) {
                 <View style={{ marginTop: t.space['4'] }}>
                     <TextField
                         label="Monto recibido"
-                        value={montoRecibidoRaw}
-                        onChangeText={setMontoRecibidoRaw}
+                        value={montoRecibidoDisplay}
+                        onChangeText={handleMontoChange}
                         placeholder="0"
                         keyboardType="number-pad"
                         mono

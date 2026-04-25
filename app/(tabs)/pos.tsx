@@ -1,40 +1,46 @@
 /**
- * POS — pantalla de venta presencial.
+ * POS — pantalla de venta presencial (versión simplificada).
  *
- * Estructura visual (direction B, Retail preciso):
+ * Estructura:
  *   - Header: nombre del negocio + ubicación actual.
- *   - Chips horizontales de ubicaciones (solo admin/cajero con múltiples).
- *   - Barra de búsqueda + IconButton ESCANEAR.
- *   - Tabs: Carrito / Catálogo.
- *   - Lista (carrito o catálogo).
- *   - Footer sticky con total mono + CTA COBRAR.
+ *   - Chips de ubicación (admin/cajero con varias).
+ *   - Cuerpo:
+ *       · Carrito vacío  → dos CTAs grandes: "Escanear" + "Ver catálogo".
+ *       · Carrito lleno → lista de items + botoncitos "Escanear" / "Catálogo".
+ *   - Footer sticky: total + COBRAR.
  *
- * La lógica de negocio (hooks, handlers, offline queue, optimistic stock)
- * se preserva 1:1 respecto a la versión anterior.
+ * Búsqueda libre y vista catálogo se movieron a `app/catalogo-venta.tsx`.
+ * El POS se enfoca en lo que el cajero hace 90% del tiempo: escanear y cobrar.
+ *
+ * Escaneo:
+ *   - Toggle Uno/Varios visible en el modal. Default 'Uno' (mantiene hábito).
+ *   - En 'Varios' la cámara queda abierta y cada lectura agrega al carrito
+ *     con feedback (haptic + beep + flash). El cajero pulsa "Listo" al final.
  */
 import { Ionicons } from '@expo/vector-icons';
 import * as Crypto from 'expo-crypto';
 import { Image } from 'expo-image';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
     FlatList,
-    Keyboard,
     Pressable,
     ScrollView,
     View,
 } from 'react-native';
+import type { CatalogoProducto } from '../../src/contexts/catalogo-local/domain/CatalogoSnapshot';
 import { Producto } from '../../src/contexts/producto/domain/Producto';
 import type { Modelo, Variante } from '../../src/contexts/producto/domain/Variante';
 import { DomainError } from '../../src/contexts/shared/domain/DomainError';
 import type { Ubicacion } from '../../src/contexts/ubicacion/domain/Ubicacion';
-import type { CatalogoProducto } from '../../src/contexts/catalogo-local/domain/CatalogoSnapshot';
 import type { VarianteInfo } from '../../src/contexts/venta/domain/ItemCarrito';
 import type { MedioPago } from '../../src/contexts/venta/domain/MedioPago';
 import { trySyncCatalogo } from '../../src/runtime/catalogo/CatalogoSyncManager';
+import { toProducto } from '../../src/runtime/catalogo/toProducto';
 import { ClienteModal, type ClienteResuelto } from '../../src/runtime/components/ClienteModal';
 import { CobroModal } from '../../src/runtime/components/CobroModal';
-import { ScannerModal } from '../../src/runtime/components/ScannerModal';
+import { ScannerModal, type ScannerMode } from '../../src/runtime/components/ScannerModal';
 import { SelectorVarianteModal } from '../../src/runtime/components/SelectorVarianteModal';
 import {
     Badge,
@@ -45,7 +51,6 @@ import {
     IconButton,
     Screen,
     Text,
-    TextField,
 } from '../../src/runtime/components/ui';
 import { container } from '../../src/runtime/di/container';
 import { executeOrEnqueue } from '../../src/runtime/offline/OfflineQueueManager';
@@ -58,26 +63,6 @@ import { useOfflineQueueStore } from '../../src/runtime/stores/OfflineQueueStore
 import { useSesionStore } from '../../src/runtime/stores/SesionStore';
 import { useTheme } from '../../src/runtime/theme/ThemeProvider';
 import { formatCLP } from '../../src/runtime/utils/formato';
-
-const claveDe = (productoId: string, varianteId: string | null): string =>
-    varianteId ? `${productoId}:${varianteId}` : `${productoId}::`;
-
-function toProducto(p: CatalogoProducto): Producto {
-    return Producto.create({
-        id: p.id,
-        nombre: p.nombre,
-        descripcion: null,
-        codigoBarras: p.codigoBarra,
-        sku: p.codigoInterno,
-        costoNetoUnitario: 0,
-        precioVentaFinalUnitario: p.precioVentaFinal,
-        precioVentaNetoUnitario: p.precioVentaFinal,
-        precioOferta: p.precioOferta,
-        imagenes: [],
-        imagenUrl: p.imagenUrl ?? null,
-        activo: p.activo,
-    });
-}
 
 interface ProductoVista {
     producto: Producto;
@@ -96,6 +81,7 @@ interface TicketInfo {
 
 export default function PosScreen() {
     const t = useTheme();
+    const router = useRouter();
     const sesion = useSesionStore((s) => s.sesion);
     const negocio = useSesionStore((s) => s.negocio);
     const { carrito, version, agregar, quitar, setCantidad, vaciar } = useCarritoStore();
@@ -107,10 +93,10 @@ export default function PosScreen() {
     const diasSinSync = diasDesdeUltimaSync(lastSyncAt);
     const online = useOfflineQueueStore((s) => s.online) !== false;
 
-    const [query, setQuery] = useState('');
-    const [productos, setProductos] = useState<ProductoVista[]>([]);
-    const [buscando, setBuscando] = useState(false);
     const [scannerVisible, setScannerVisible] = useState(false);
+    const [scannerMode, setScannerMode] = useState<ScannerMode>('single');
+    const [scanFlash, setScanFlash] = useState<string | null>(null);
+    const [scanFlashKey, setScanFlashKey] = useState(0);
     const [cobroVisible, setCobroVisible] = useState(false);
     const [clienteModalVisible, setClienteModalVisible] = useState(false);
     const [clienteResuelto, setClienteResuelto] = useState<ClienteResuelto | null>(null);
@@ -119,11 +105,10 @@ export default function PosScreen() {
     const [ubicaciones, setUbicaciones] = useState<Ubicacion[]>([]);
     const [ubicacionManualId, setUbicacionManualId] = useState<string | null>(null);
     const [cargandoUbicaciones, setCargandoUbicaciones] = useState(false);
-    const [vista, setVista] = useState<'carrito' | 'catalogo'>('carrito');
     const [selectorProducto, setSelectorProducto] = useState<Producto | null>(null);
-    const [selectorRaw, setSelectorRaw] = useState<CatalogoProducto | null>(null);
     const [stockPorVariante, setStockPorVariante] = useState<Map<string, number>>(new Map());
-    const [stockPorProducto, setStockPorProducto] = useState<Map<string, number>>(new Map());
+    const [scanBusy, setScanBusy] = useState(false);
+
 
     useEffect(() => {
         vaciar();
@@ -154,89 +139,42 @@ export default function PosScreen() {
         ? negocio?.ubicacionNombre ?? null
         : ubicaciones.find((u) => u.id === ubicacionManualId)?.nombre ?? null;
 
-    const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    const fetchProductos = useCallback(
-        async (texto: string) => {
-            if (!ubicacionId) return;
-            setBuscando(true);
-            setError(null);
-            try {
-                const items = await container.catalogoLocalRepo.buscarProductos({
-                    q: texto,
-                    ubicacionId,
-                    limit: 50,
-                });
-                const vistas: ProductoVista[] = items.map((i) => ({
-                    producto: toProducto(i.producto),
-                    raw: i.producto,
-                    stockAgregado: i.stockAgregado,
-                    tieneVariantes: i.tieneVariantes,
-                }));
-                setProductos(vistas);
-
-                const prodMap = new Map<string, number>();
-                const varMap = new Map<string, number>();
-                for (const v of vistas) {
-                    prodMap.set(v.producto.id, v.stockAgregado);
-                    if (v.tieneVariantes) {
-                        const vs = await container.catalogoLocalRepo.findVariantesByProducto(v.producto.id);
-                        for (const vr of vs) {
-                            const stk = await container.catalogoLocalRepo.findStockLocal(
-                                v.producto.id,
-                                vr.id,
-                                ubicacionId,
-                            );
-                            varMap.set(vr.id, stk);
-                        }
-                    }
-                }
-                setStockPorProducto(prodMap);
-                setStockPorVariante(varMap);
-            } catch (e) {
-                setError(e instanceof Error ? e.message : 'Error al cargar productos');
-            } finally {
-                setBuscando(false);
-            }
-        },
-        [ubicacionId],
-    );
-
-    useEffect(() => {
-        if (puedeVender) fetchProductos('');
-    }, [puedeVender, ubicacionId, fetchProductos]);
-
-    useEffect(() => {
-        if (puedeVender) fetchProductos(query);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [lastSyncAt]);
-
     useEffect(() => {
         if (online) void trySyncCatalogo();
     }, [online]);
 
-    const stockDeProducto = useCallback(
-        (productoId: string) => stockPorProducto.get(productoId) ?? 0,
-        [stockPorProducto],
-    );
-    const stockDeVariante = useCallback(
-        (varianteId: string) => stockPorVariante.get(varianteId) ?? 0,
-        [stockPorVariante],
-    );
+    // Stock por variante (sólo lo necesita el SelectorVarianteModal). Se refresca
+    // cuando el carrito cambia para mantener el selector consistente.
+    useEffect(() => {
+        if (!ubicacionId || carrito.items.length === 0) {
+            setStockPorVariante(new Map());
+            return;
+        }
+        let cancelado = false;
+        (async () => {
+            const varMap = new Map<string, number>();
+            for (const it of carrito.items) {
+                if (it.variante) {
+                    const stk = await container.catalogoLocalRepo.findStockLocal(
+                        it.producto.id,
+                        it.variante.id,
+                        ubicacionId,
+                    );
+                    varMap.set(it.variante.id, stk);
+                }
+            }
+            if (!cancelado) setStockPorVariante(varMap);
+        })();
+        return () => {
+            cancelado = true;
+        };
+    }, [ubicacionId, version, carrito]);
 
     const cantidadEnCarritoMap = useMemo(() => {
         const map = new Map<string, number>();
         for (const it of carrito.items) map.set(it.clave, it.cantidad);
         return map;
     }, [carrito, version]);
-
-    const onQueryChange = (txt: string) => {
-        setQuery(txt);
-        // No cambiamos de vista automáticamente: el usuario decide cuándo
-        // pasar a catálogo. Esto vale tanto al tipear como al escanear.
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => fetchProductos(txt), 200);
-    };
 
     const selectorProvider = useCallback(
         async (productoId: string): Promise<{ variantes: Variante[]; modelos: Modelo[] }> => {
@@ -270,44 +208,18 @@ export default function PosScreen() {
     const handleAgregar = (p: Producto, variante: VarianteInfo | null) => {
         setError(null);
         agregar(p, 1, variante);
-        Keyboard.dismiss();
     };
 
-    const abrirProducto = useCallback(
-        async (v: ProductoVista) => {
-            if (v.tieneVariantes) {
-                setSelectorProducto(v.producto);
-                setSelectorRaw(v.raw);
-                return;
-            }
-            handleAgregar(v.producto, null);
-        },
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-        [],
-    );
-
-    const handleIncrementar = (productoId: string, varianteId: string | null) => {
-        const clave = claveDe(productoId, varianteId);
-        const enCarrito = cantidadEnCarritoMap.get(clave) ?? 0;
-        setError(null);
-        setCantidad(productoId, enCarrito + 1, varianteId);
-    };
-
-    const handleDecrementar = (productoId: string, varianteId: string | null) => {
-        const clave = claveDe(productoId, varianteId);
-        const enCarrito = cantidadEnCarritoMap.get(clave) ?? 0;
-        if (enCarrito <= 1) {
-            quitar(productoId, varianteId);
-        } else {
-            setCantidad(productoId, enCarrito - 1, varianteId);
-        }
-        setError(null);
+    const triggerFlash = (texto: string) => {
+        // Pasamos el texto limpio + un counter separado: el modal usa el
+        // counter como trigger para reanimar incluso si el texto se repite.
+        setScanFlash(texto);
+        setScanFlashKey((k) => k + 1);
     };
 
     const handleScan = async (codigo: string) => {
-        setScannerVisible(false);
-        if (!ubicacionId) return;
-        setBuscando(true);
+        if (!ubicacionId || scanBusy) return;
+        setScanBusy(true);
         setError(null);
         try {
             const items = await container.catalogoLocalRepo.buscarProductos({
@@ -316,23 +228,41 @@ export default function PosScreen() {
                 limit: 10,
             });
             const exacto = items.find((i) => i.producto.codigoBarra === codigo) ?? items[0];
-            if (exacto) {
-                const vista: ProductoVista = {
-                    producto: toProducto(exacto.producto),
-                    raw: exacto.producto,
-                    stockAgregado: exacto.stockAgregado,
-                    tieneVariantes: exacto.tieneVariantes,
-                };
-                await abrirProducto(vista);
-                setQuery('');
-                fetchProductos('');
-            } else {
-                setError(`No se encontró producto con código ${codigo}`);
+            if (!exacto) {
+                if (scannerMode === 'multi') {
+                    triggerFlash(`Sin coincidencia: ${codigo}`);
+                } else {
+                    setError(`No se encontró producto con código ${codigo}`);
+                    setScannerVisible(false);
+                }
+                return;
+            }
+            const vista: ProductoVista = {
+                producto: toProducto(exacto.producto),
+                raw: exacto.producto,
+                stockAgregado: exacto.stockAgregado,
+                tieneVariantes: exacto.tieneVariantes,
+            };
+            if (vista.tieneVariantes) {
+                // Productos con variantes nunca se agregan en modo ráfaga: no
+                // sabríamos qué talla. Cerramos el modal y dejamos al cajero
+                // elegir variante en el selector.
+                setScannerVisible(false);
+                setSelectorProducto(vista.producto);
+                return;
+            }
+            handleAgregar(vista.producto, null);
+            const yaEnCarrito =
+                (cantidadEnCarritoMap.get(`${vista.producto.id}::`) ?? 0) + 1;
+            triggerFlash(`✓ ${vista.producto.nombre} (x${yaEnCarrito})`);
+            if (scannerMode === 'single') {
+                setScannerVisible(false);
             }
         } catch (e) {
             setError(e instanceof Error ? e.message : 'Error al buscar');
+            if (scannerMode === 'single') setScannerVisible(false);
         } finally {
-            setBuscando(false);
+            setScanBusy(false);
         }
     };
 
@@ -397,8 +327,6 @@ export default function PosScreen() {
             vaciar();
             setCobroVisible(false);
             setClienteResuelto(null);
-            setVista('carrito');
-            fetchProductos(query);
         } catch (e) {
             throw e instanceof DomainError || e instanceof Error ? e : new Error('Error desconocido');
         }
@@ -408,6 +336,35 @@ export default function PosScreen() {
         setClienteModalVisible(false);
         setClienteResuelto(r.tipo === 'skip' ? null : r);
         setCobroVisible(true);
+    };
+
+    const claveDe = (productoId: string, varianteId: string | null): string =>
+        varianteId ? `${productoId}:${varianteId}` : `${productoId}::`;
+
+    const handleIncrementar = (productoId: string, varianteId: string | null) => {
+        const clave = claveDe(productoId, varianteId);
+        const enCarrito = cantidadEnCarritoMap.get(clave) ?? 0;
+        setError(null);
+        setCantidad(productoId, enCarrito + 1, varianteId);
+    };
+
+    const handleDecrementar = (productoId: string, varianteId: string | null) => {
+        const clave = claveDe(productoId, varianteId);
+        const enCarrito = cantidadEnCarritoMap.get(clave) ?? 0;
+        if (enCarrito <= 1) {
+            quitar(productoId, varianteId);
+        } else {
+            setCantidad(productoId, enCarrito - 1, varianteId);
+        }
+        setError(null);
+    };
+
+    const irAlCatalogo = () => {
+        if (!ubicacionId) return;
+        router.push({
+            pathname: '/catalogo-venta',
+            params: { ubicacionId },
+        });
     };
 
     // ================== Render ==================
@@ -431,8 +388,6 @@ export default function PosScreen() {
         );
     }
 
-    // Desglose de IVA del total del carrito. `subtotal` ya viene con IVA
-    // (precio de venta final). Calculamos neto + IVA para mostrarlo.
     const ivaPct = negocio?.impuestoVentaPorcentaje ?? 19;
     const totalConIva = carrito.subtotal;
     const totalNeto = totalConIva > 0 ? Math.round(totalConIva / (1 + ivaPct / 100)) : 0;
@@ -549,64 +504,38 @@ export default function PosScreen() {
                 </View>
             ) : null}
 
-            {/* Barra de búsqueda + escanear */}
-            <View
-                style={{
-                    flexDirection: 'row',
-                    gap: t.space['2'],
-                    paddingHorizontal: t.space['4'],
-                    alignItems: 'flex-end',
-                }}
-            >
-                <View style={{ flex: 1 }}>
-                    <TextField
-                        placeholder="Buscar por nombre, SKU o código…"
-                        value={query}
-                        onChangeText={onQueryChange}
-                        autoCorrect={false}
-                        editable={puedeVender}
-                        leadingIcon={<Ionicons name="search" size={18} color={t.color.fg.tertiary} />}
+            {/* Action bar superior cuando el carrito tiene items */}
+            {!carrito.vacio ? (
+                <View
+                    style={{
+                        flexDirection: 'row',
+                        gap: t.space['2'],
+                        paddingHorizontal: t.space['4'],
+                        paddingBottom: t.space['2'],
+                    }}
+                >
+                    <Button
+                        variant="secondary"
+                        size="md"
+                        label="Escanear"
+                        leadingIcon={<Ionicons name="barcode-outline" size={18} color={t.color.fg.primary} />}
+                        onPress={() => {
+                            setScannerVisible(true);
+                        }}
+                        disabled={!puedeVender}
+                        style={{ flex: 1 }}
+                    />
+                    <Button
+                        variant="secondary"
+                        size="md"
+                        label="Catálogo"
+                        leadingIcon={<Ionicons name="cube-outline" size={18} color={t.color.fg.primary} />}
+                        onPress={irAlCatalogo}
+                        disabled={!puedeVender}
+                        style={{ flex: 1 }}
                     />
                 </View>
-                <IconButton
-                    variant="solid"
-                    size="lg"
-                    accessibilityLabel="Escanear código de barras"
-                    icon={<Ionicons name="barcode-outline" size={22} color={t.color.fg.onAccent} />}
-                    disabled={!puedeVender}
-                    onPress={() => setScannerVisible(true)}
-                />
-            </View>
-
-            {/* Tabs carrito/catalogo */}
-            <View
-                style={{
-                    flexDirection: 'row',
-                    paddingHorizontal: t.space['4'],
-                    marginTop: t.space['3'],
-                    marginBottom: t.space['2'],
-                    gap: t.space['2'],
-                    alignItems: 'center',
-                }}
-            >
-                <Chip
-                    label={`Carrito · ${carrito.cantidadItems}`}
-                    selected={vista === 'carrito'}
-                    onPress={() => setVista('carrito')}
-                />
-                <Chip
-                    label="Catálogo"
-                    selected={vista === 'catalogo'}
-                    onPress={() => setVista('catalogo')}
-                    disabled={!puedeVender}
-                />
-                {buscando ? (
-                    <ActivityIndicator
-                        color={t.color.accent.default}
-                        style={{ marginLeft: t.space['1'] }}
-                    />
-                ) : null}
-            </View>
+            ) : null}
 
             {/* Error inline */}
             {error ? (
@@ -616,7 +545,7 @@ export default function PosScreen() {
             ) : null}
 
             {/* Ticket reciente */}
-            {ultimoTicket && vista === 'carrito' ? (
+            {ultimoTicket ? (
                 <View style={{ paddingHorizontal: t.space['4'], marginBottom: t.space['2'] }}>
                     <Card
                         variant="outline"
@@ -662,126 +591,41 @@ export default function PosScreen() {
                 </View>
             ) : null}
 
-            {/* Lista */}
-            {vista === 'catalogo' ? (
-                <FlatList
-                    data={productos}
-                    keyExtractor={(p) => p.producto.id}
-                    style={{ flex: 1 }}
-                    contentContainerStyle={
-                        productos.length === 0
-                            ? { flex: 1, alignItems: 'center', justifyContent: 'center' }
-                            : { paddingBottom: t.space['6'] }
-                    }
-                    ListEmptyComponent={
-                        !buscando && puedeVender ? (
-                            <View style={{ paddingHorizontal: t.space['6'] }}>
-                                <Text variant="bodyMd" tone="tertiary" align="center">
-                                    {query.trim()
-                                        ? 'Sin resultados para esa búsqueda.'
-                                        : 'No hay productos en el catálogo.'}
-                                </Text>
-                            </View>
-                        ) : null
-                    }
-                    renderItem={({ item }) => {
-                        const disponible = item.stockAgregado;
-                        const sinStock = disponible <= 0;
-                        return (
-                            <Pressable
-                                onPress={() => abrirProducto(item)}
-                                disabled={!puedeVender}
-                                style={({ pressed }) => ({
-                                    flexDirection: 'row',
-                                    alignItems: 'center',
-                                    gap: t.space['3'],
-                                    paddingHorizontal: t.space['4'],
-                                    paddingVertical: t.space['3'],
-                                    borderBottomWidth: t.border.default,
-                                    borderBottomColor: t.color.border.subtle,
-                                    backgroundColor: pressed ? t.color.bg.sunken : 'transparent',
-                                    opacity: puedeVender ? 1 : 0.5,
-                                })}
-                            >
-                                <View
-                                    style={{
-                                        width: 44,
-                                        height: 44,
-                                        borderRadius: t.radius.sm,
-                                        backgroundColor: t.color.bg.sunken,
-                                        borderWidth: t.border.default,
-                                        borderColor: t.color.border.subtle,
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                    }}
-                                >
-                                    <Text variant="headingSm" tone="tertiary">
-                                        {item.producto.nombre.charAt(0).toUpperCase()}
-                                    </Text>
-                                </View>
-                                <View style={{ flex: 1, minWidth: 0 }}>
-                                    <Text variant="bodyMd" emphasized numberOfLines={1}>
-                                        {item.producto.nombre}
-                                    </Text>
-                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.space['2'], marginTop: 2 }}>
-                                        <Text variant="monoSm" tone="tertiary" numberOfLines={1} style={{ flexShrink: 1 }}>
-                                            {item.producto.sku
-                                                ? `SKU ${item.producto.sku}`
-                                                : item.producto.codigoBarras
-                                                    ? `CB ${item.producto.codigoBarras}`
-                                                    : '—'}
-                                        </Text>
-                                        <Text variant="bodySm" tone={sinStock ? 'danger' : 'tertiary'}>
-                                            · Stock {disponible}
-                                        </Text>
-                                        {item.tieneVariantes ? (
-                                            <Badge tone="neutral" variant="soft" label="VAR" />
-                                        ) : null}
-                                    </View>
-                                </View>
-                                <View style={{ alignItems: 'flex-end', gap: t.space['1'] }}>
-                                    <Text variant="monoMd" tabular emphasized>
-                                        {formatCLP(item.producto.precio)}
-                                    </Text>
-                                    <Button
-                                        size="sm"
-                                        variant={item.tieneVariantes ? 'secondary' : 'primary'}
-                                        label={item.tieneVariantes ? 'Elegir' : 'Agregar'}
-                                        disabled={!puedeVender}
-                                        onPress={() => abrirProducto(item)}
-                                    />
-                                </View>
-                            </Pressable>
-                        );
+            {/* Cuerpo: carrito o CTAs grandes */}
+            {carrito.vacio ? (
+                <View
+                    style={{
+                        flex: 1,
+                        paddingHorizontal: t.space['4'],
+                        gap: t.space['3'],
+                        justifyContent: 'center',
                     }}
-                />
+                >
+                    <CTAGrande
+                        icono="barcode-outline"
+                        titulo="Escanear código"
+                        descripcion="Una lectura o varias seguidas. Cada código se agrega al carrito."
+                        destacada
+                        disabled={!puedeVender}
+                        onPress={() => setScannerVisible(true)}
+                    />
+                    <CTAGrande
+                        icono="cube-outline"
+                        titulo="Ver catálogo"
+                        descripcion="Lista de productos con stock. Filtra por categoría, marca o texto."
+                        disabled={!puedeVender}
+                        onPress={irAlCatalogo}
+                    />
+                </View>
             ) : (
                 <FlatList
                     key={version}
                     data={carrito.items as any}
                     keyExtractor={(i) => i.clave}
                     style={{ flex: 1 }}
-                    contentContainerStyle={
-                        carrito.vacio
-                            ? { flex: 1, alignItems: 'center', justifyContent: 'center' }
-                            : { paddingBottom: t.space['6'] }
-                    }
-                    ListEmptyComponent={
-                        <View style={{ paddingHorizontal: t.space['6'] }}>
-                            <EmptyState
-                                icon={<Ionicons name="cart-outline" size={40} color={t.color.fg.tertiary} />}
-                                title="Carrito vacío"
-                                description="Escanea un código, busca un producto o abre el catálogo para empezar a vender."
-                                actionLabel="Ver catálogo"
-                                onAction={() => setVista('catalogo')}
-                            />
-                        </View>
-                    }
+                    contentContainerStyle={{ paddingBottom: t.space['6'] }}
                     renderItem={({ item }) => {
                         const varianteId = item.variante?.id ?? null;
-                        const disponible = varianteId
-                            ? stockDeVariante(varianteId)
-                            : stockDeProducto(item.producto.id);
                         return (
                             <View
                                 style={{
@@ -792,7 +636,6 @@ export default function PosScreen() {
                                     gap: t.space['2'],
                                 }}
                             >
-                                {/* Fila superior: imagen + nombre/variante + total línea + eliminar */}
                                 <View
                                     style={{
                                         flexDirection: 'row',
@@ -845,7 +688,7 @@ export default function PosScreen() {
                                             numberOfLines={1}
                                             style={{ marginTop: 2 }}
                                         >
-                                            {formatCLP(item.precioUnitario)} c/u · Stock {disponible}
+                                            {formatCLP(item.precioUnitario)} c/u
                                         </Text>
                                     </View>
                                     <View style={{ alignItems: 'flex-end' }}>
@@ -868,7 +711,6 @@ export default function PosScreen() {
                                     </View>
                                 </View>
 
-                                {/* Fila inferior: controles de cantidad alineados a la derecha. */}
                                 <View
                                     style={{
                                         flexDirection: 'row',
@@ -906,10 +748,20 @@ export default function PosScreen() {
                 />
             )}
 
+            {scanBusy ? (
+                <View style={{ position: 'absolute', top: 80, alignSelf: 'center' }}>
+                    <ActivityIndicator color={t.color.accent.default} />
+                </View>
+            ) : null}
+
             <ScannerModal
                 visible={scannerVisible}
                 onClose={() => setScannerVisible(false)}
                 onScan={handleScan}
+                mode={scannerMode}
+                onModeChange={setScannerMode}
+                lastScanFlash={scanFlash}
+                flashKey={scanFlashKey}
             />
             {sesion && negocio ? (
                 <ClienteModal
@@ -935,17 +787,96 @@ export default function PosScreen() {
                     stockPorVariante={stockPorVariante}
                     provider={selectorProvider}
                     bloquearSinStock={false}
-                    onClose={() => {
-                        setSelectorProducto(null);
-                        setSelectorRaw(null);
-                    }}
+                    onClose={() => setSelectorProducto(null)}
                     onSeleccionar={(p, variante) => {
                         setSelectorProducto(null);
-                        setSelectorRaw(null);
                         handleAgregar(p, variante);
                     }}
                 />
             ) : null}
         </Screen>
+    );
+}
+
+function CTAGrande({
+    icono,
+    titulo,
+    descripcion,
+    destacada,
+    disabled,
+    onPress,
+}: {
+    icono: keyof typeof Ionicons.glyphMap;
+    titulo: string;
+    descripcion: string;
+    destacada?: boolean;
+    disabled?: boolean;
+    onPress: () => void;
+}) {
+    const t = useTheme();
+    return (
+        <Pressable
+            onPress={onPress}
+            disabled={disabled}
+            style={({ pressed }) => ({
+                borderRadius: t.radius.lg,
+                borderWidth: t.border.default,
+                borderColor: destacada ? t.color.accent.default : t.color.border.subtle,
+                backgroundColor: destacada
+                    ? pressed
+                        ? t.color.accent.pressed
+                        : t.color.accent.default
+                    : pressed
+                        ? t.color.bg.sunken
+                        : t.color.bg.raised,
+                padding: t.space['4'],
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: t.space['3'],
+                opacity: disabled ? 0.5 : 1,
+            })}
+        >
+            <View
+                style={{
+                    width: 52,
+                    height: 52,
+                    borderRadius: 26,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: destacada
+                        ? 'rgba(255,255,255,0.18)'
+                        : t.color.bg.sunken,
+                }}
+            >
+                <Ionicons
+                    name={icono}
+                    size={28}
+                    color={destacada ? t.color.fg.onAccent : t.color.fg.primary}
+                />
+            </View>
+            <View style={{ flex: 1 }}>
+                <Text
+                    variant="headingSm"
+                    style={destacada ? { color: t.color.fg.onAccent } : undefined}
+                >
+                    {titulo}
+                </Text>
+                <Text
+                    variant="bodySm"
+                    style={{
+                        marginTop: 2,
+                        color: destacada ? t.color.fg.onAccent : t.color.fg.secondary,
+                        opacity: destacada ? 0.9 : 1,
+                    }}
+                >
+                    {descripcion}
+                </Text>
+            </View>
+            <Ionicons
+                name="chevron-forward"
+                size={20}
+                color={destacada ? t.color.fg.onAccent : t.color.fg.tertiary}
+            />
+        </Pressable>
     );
 }

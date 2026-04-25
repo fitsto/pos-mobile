@@ -1,6 +1,8 @@
 /**
  * Modal de registro / búsqueda de cliente para una venta.
- * Flujo: inicio → tengo RUT (busca) o sin RUT (form) o saltar.
+ * Flujo: inicio → tengo RUT (busca; si existe, usa; si no, registra) o
+ * saltar (venta queda sin cliente). El RUT es obligatorio para asociar
+ * un cliente — si el comprador no lo da, se usa "Saltar".
  */
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
@@ -24,11 +26,7 @@ interface Props {
     onResuelto: (r: ClienteResuelto) => void;
 }
 
-type Paso =
-    | 'inicio'
-    | 'conRut'
-    | 'formularioConRut'
-    | 'formularioSinRut';
+type Paso = 'inicio' | 'conRut' | 'formularioConRut';
 
 export function ClienteModal({ visible, negocioId, token, onClose, onResuelto }: Props) {
     const t = useTheme();
@@ -57,6 +55,17 @@ export function ClienteModal({ visible, negocioId, token, onClose, onResuelto }:
         if (debounceRef.current) clearTimeout(debounceRef.current);
     };
 
+    // RUT formateado para mostrar en el resumen (paso "formularioConRut").
+    // Sólo cosmético — el valor que se valida y se envía es `rutRaw`.
+    const formatearRutParaMostrar = (raw: string): string => {
+        const limpio = raw.toUpperCase().replace(/[^0-9K]/g, '');
+        if (limpio.length < 2) return limpio;
+        const cuerpo = limpio.slice(0, -1);
+        const dv = limpio.slice(-1);
+        const cuerpoConPuntos = cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        return `${cuerpoConPuntos}-${dv}`;
+    };
+
     useEffect(() => {
         if (!visible) reset();
     }, [visible]);
@@ -78,12 +87,18 @@ export function ClienteModal({ visible, negocioId, token, onClose, onResuelto }:
             .finally(() => setBuscando(false));
     };
 
+    // Decisión: NO formateamos el RUT mientras se tipea ni en blur.
+    // En React Native, mutar `value` desde onChangeText reposiciona el
+    // cursor y produce dígitos duplicados o perdidos. Para evitar todo
+    // ese baile pedimos el RUT como string puro: dígitos + DV (donde DV
+    // puede ser `K`). El usuario ve un hint que se lo indica.
     const onChangeRut = (val: string) => {
-        setRutRaw(val);
+        const limpio = val.toUpperCase().replace(/[^0-9K]/g, '').slice(0, 9);
+        setRutRaw(limpio);
         setEncontrado(null);
         setRutError(null);
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => buscarRut(val), 400);
+        debounceRef.current = setTimeout(() => buscarRut(limpio), 400);
     };
 
     const confirmarEncontrado = () => {
@@ -95,25 +110,23 @@ export function ClienteModal({ visible, negocioId, token, onClose, onResuelto }:
         });
     };
 
-    const confirmarFormulario = (conRut: boolean) => {
+    const confirmarFormulario = () => {
         setFormError(null);
         const nombreLimpio = nombre.trim();
         if (!nombreLimpio) {
             setFormError('El nombre es obligatorio');
             return;
         }
-        let rutNorm: string | undefined;
-        if (conRut) {
-            try {
-                rutNorm = validarRut(rutRaw);
-            } catch (e) {
-                setFormError(e instanceof Error ? e.message : 'RUT inválido');
-                return;
-            }
+        let rutNorm: string;
+        try {
+            rutNorm = validarRut(rutRaw);
+        } catch (e) {
+            setFormError(e instanceof Error ? e.message : 'RUT inválido');
+            return;
         }
         const data: ClienteDataInput = {
             name: nombreLimpio,
-            ...(rutNorm && { rut: rutNorm }),
+            rut: rutNorm,
             ...(email.trim() && { email: email.trim() }),
             ...(telefono.trim() && { telefono: telefono.trim() }),
         };
@@ -139,13 +152,6 @@ export function ClienteModal({ visible, negocioId, token, onClose, onResuelto }:
                         fullWidth
                     />
                     <Button
-                        variant="secondary"
-                        size="lg"
-                        label="Sin RUT — datos básicos"
-                        onPress={() => setPaso('formularioSinRut')}
-                        fullWidth
-                    />
-                    <Button
                         variant="ghost"
                         size="lg"
                         label="Saltar"
@@ -161,9 +167,12 @@ export function ClienteModal({ visible, negocioId, token, onClose, onResuelto }:
                         label="RUT"
                         value={rutRaw}
                         onChangeText={onChangeRut}
-                        placeholder="12345678-9"
+                        placeholder="123456789"
+                        helper="Sin puntos ni guión. Incluye el dígito verificador (puede ser K)."
                         autoCapitalize="characters"
                         autoCorrect={false}
+                        keyboardType="default"
+                        maxLength={9}
                         error={rutError ?? undefined}
                         mono
                     />
@@ -224,16 +233,14 @@ export function ClienteModal({ visible, negocioId, token, onClose, onResuelto }:
                 </View>
             ) : null}
 
-            {paso === 'formularioConRut' || paso === 'formularioSinRut' ? (
+            {paso === 'formularioConRut' ? (
                 <View style={{ gap: t.space['3'] }}>
-                    {paso === 'formularioConRut' ? (
-                        <TextField
-                            label="RUT"
-                            value={rutRaw}
-                            editable={false}
-                            mono
-                        />
-                    ) : null}
+                    <TextField
+                        label="RUT"
+                        value={formatearRutParaMostrar(rutRaw)}
+                        editable={false}
+                        mono
+                    />
                     <TextField
                         label="Nombre"
                         required
@@ -263,14 +270,14 @@ export function ClienteModal({ visible, negocioId, token, onClose, onResuelto }:
                             variant="ghost"
                             size="lg"
                             label="Atrás"
-                            onPress={() => setPaso(paso === 'formularioConRut' ? 'conRut' : 'inicio')}
+                            onPress={() => setPaso('conRut')}
                             style={{ flex: 1 }}
                         />
                         <Button
                             variant="primary"
                             size="lg"
                             label="Confirmar"
-                            onPress={() => confirmarFormulario(paso === 'formularioConRut')}
+                            onPress={confirmarFormulario}
                             style={{ flex: 1 }}
                         />
                     </View>

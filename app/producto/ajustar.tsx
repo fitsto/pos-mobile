@@ -3,6 +3,7 @@
  * Reutiliza ScannerModal + SelectorVarianteModal. Soporta offline vía executeOrEnqueue.
  */
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
@@ -59,6 +60,20 @@ export default function StockScreen() {
     const sesion = useSesionStore((s) => s.sesion);
     const negocio = useSesionStore((s) => s.negocio);
     const esVendedor = negocio?.rol === 'VENDEDOR';
+    // Permite navegar acá ya con un producto pre-seleccionado desde el detalle:
+    // `router.push('/producto/ajustar?productoId=...')`. Evita que el cajero
+    // tenga que buscar/escanear de nuevo el producto que ya tenía abierto.
+    const router = useRouter();
+    const { productoId: productoIdParam } = useLocalSearchParams<{ productoId?: string }>();
+    const [productoPreseleccionado, setProductoPreseleccionado] = useState<string | null>(
+        productoIdParam ?? null,
+    );
+    // Snapshot del param INICIAL: si el usuario llegó acá desde el detalle
+    // de un producto (ruta `/producto/ajustar?productoId=...`), tras un
+    // ajuste exitoso queremos devolverlo al detalle, no dejarlo en la
+    // lista general de stock. Lo guardamos en un ref-like state que no
+    // mutamos cuando limpiamos `productoPreseleccionado`.
+    const [vinoDelDetalleProducto] = useState<boolean>(!!productoIdParam);
 
     const [ubicaciones, setUbicaciones] = useState<Ubicacion[]>([]);
     const [ubicacionId, setUbicacionId] = useState<string | null>(
@@ -170,6 +185,35 @@ export default function StockScreen() {
         cargarStock();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ubicacionId, sesion, negocio]);
+
+    // Pre-selección por param: cuando llegamos a esta pantalla con
+    // ?productoId=..., resolvemos el producto y abrimos el formulario de
+    // ajuste sin que el cajero tenga que volver a buscar/escanear.
+    //
+    // No esperamos a `cargandoStock` para no toparnos con un re-render que
+    // cancele el fetch a medias. `elegirProducto` hace su propia consulta
+    // de variantes vía API, así que no depende de que cargarStock haya
+    // terminado.
+    useEffect(() => {
+        if (!productoPreseleccionado || !sesion || !negocio) return;
+        // Limpiamos el param ANTES del await para que el efecto no se
+        // dispare dos veces si algún dep cambia mientras esperamos red.
+        const productoId = productoPreseleccionado;
+        setProductoPreseleccionado(null);
+        (async () => {
+            try {
+                const producto = await container.obtenerProducto.execute({
+                    negocioId: negocio.id,
+                    productoId,
+                    token: sesion.token,
+                });
+                await elegirProducto(producto);
+            } catch (e) {
+                setError(e instanceof Error ? e.message : 'No pudimos cargar el producto');
+            }
+        })();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [productoPreseleccionado, sesion, negocio]);
 
     useEffect(() => {
         if (!exito) return;
@@ -321,6 +365,15 @@ export default function StockScreen() {
             setVarianteSeleccionada(null);
             setCantidad('');
             setComentario('');
+
+            // Si el ajuste se ejecutó online y llegamos a esta pantalla
+            // desde el detalle de un producto, devolvemos al usuario allí
+            // — es donde estaba antes y ya no le interesa la lista general.
+            // Pequeño delay para que vea el badge de éxito antes de volver.
+            if (vinoDelDetalleProducto && result.executedOnline) {
+                setTimeout(() => router.back(), 800);
+                return;
+            }
 
             const online = useOfflineQueueStore.getState().online;
             if (online !== false && result.executedOnline) {

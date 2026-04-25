@@ -70,6 +70,7 @@ export default function TabsLayout() {
     const insets = useSafeAreaInsets();
     const negocio = useSesionStore((s) => s.negocio);
     const esVendedor = negocio?.rol === 'VENDEDOR';
+    const usarCaja = negocio?.usarControlCaja ?? false;
     const pendingCount = useOfflineQueueStore(selectPendingCount);
 
     return (
@@ -116,6 +117,11 @@ export default function TabsLayout() {
                 options={{
                     title: 'Caja',
                     tabBarIcon: ({ color, size }) => <TabIcon name="cash-outline" color={color} size={size} />,
+                    // Si la tienda no tiene control de caja, ocultamos la pestaña.
+                    // `href: null` la quita de la barra; la ruta sigue existiendo
+                    // por si algo navega a /caja explícito (mostrará el mensaje
+                    // de "deshabilitado" en la pantalla).
+                    href: usarCaja ? '/caja' : null,
                 }}
             />
             <Tabs.Screen

@@ -116,12 +116,21 @@ export class SqliteOfflineQueueRepository implements OfflineQueueRepository {
     );
   }
 
-  async markPending(id: string): Promise<void> {
+  async markPending(id: string, error?: string): Promise<void> {
     const db = await this.getDb();
-    await db.runAsync(
-      `UPDATE pending_operations SET status = 'pending' WHERE id = ?`,
-      id,
-    );
+    if (error !== undefined) {
+      await db.runAsync(
+        `UPDATE pending_operations SET status = 'pending', last_error = ?, last_attempt_at = ? WHERE id = ?`,
+        error,
+        Date.now(),
+        id,
+      );
+    } else {
+      await db.runAsync(
+        `UPDATE pending_operations SET status = 'pending' WHERE id = ?`,
+        id,
+      );
+    }
   }
 
   async markFailed(id: string, error: string): Promise<void> {
@@ -153,6 +162,14 @@ export class SqliteOfflineQueueRepository implements OfflineQueueRepository {
       `SELECT COUNT(*) as c FROM pending_operations`,
     );
     return row?.c ?? 0;
+  }
+
+  async resetStaleSyncing(): Promise<number> {
+    const db = await this.getDb();
+    const result = await db.runAsync(
+      `UPDATE pending_operations SET status = 'pending' WHERE status = 'syncing'`,
+    );
+    return result.changes ?? 0;
   }
 
   async countPending(): Promise<number> {
