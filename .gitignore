@@ -40,6 +40,9 @@ yarn-error.*
 /ios
 /android
 
-# Local skills (per-machine claude config)
-.agents/
-.claude/
+# Per-machine claude config: solo los symlinks locales y worktrees efímeros.
+# Las skills reales viven en .agents/skills/ y SÍ se commitean (skills-lock.json
+# también) para que todo dev/agente que clone trabaje con la misma versión.
+.claude/skills/
+.claude/worktrees/
+.claude/settings.local.json
