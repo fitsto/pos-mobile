@@ -40,9 +40,9 @@ yarn-error.*
 /ios
 /android
 
-# Per-machine claude config: solo los symlinks locales y worktrees efímeros.
-# Las skills reales viven en .agents/skills/ y SÍ se commitean (skills-lock.json
-# también) para que todo dev/agente que clone trabaje con la misma versión.
-.claude/skills/
+# Per-machine claude config. Las skills SÍ se commitean en ambas carpetas
+# (.agents/skills/ para Antigravity y similares; .claude/skills/ para Claude
+# Code), junto con skills-lock.json, para que todo dev/agente que clone el
+# repo trabaje con la misma versión.
 .claude/worktrees/
 .claude/settings.local.json
