@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "POS Negocios",
-    "slug": "app-mobile",
+    "slug": "pos-mobile",
     "scheme": "posnegocios",
     "version": "1.0.0",
     "orientation": "portrait",

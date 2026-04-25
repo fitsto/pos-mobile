@@ -1,4 +1,4 @@
-# CLAUDE.md — app-mobile (POS Tienda)
+# CLAUDE.md — pos-mobile (POS Tienda)
 
 ## Objetivo del producto
 
