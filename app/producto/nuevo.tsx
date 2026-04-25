@@ -21,10 +21,13 @@ import { ScannerModal } from '../../src/runtime/components/ScannerModal';
 import {
     Button,
     Card,
+    ListItem,
     Screen,
+    Sheet,
     Text,
     TextField,
 } from '../../src/runtime/components/ui';
+import type { Categoria, Marca } from '../../src/contexts/producto/domain/Categoria';
 import { Image } from 'expo-image';
 import { container } from '../../src/runtime/di/container';
 import { trySyncCatalogo } from '../../src/runtime/catalogo/CatalogoSyncManager';
@@ -65,6 +68,13 @@ export default function NuevoProductoScreen() {
     const [sku, setSku] = useState('');
     const [codigoBarras, setCodigoBarras] = useState('');
     const [descripcion, setDescripcion] = useState('');
+    const [categoriaId, setCategoriaId] = useState<string | null>(null);
+    const [marcaId, setMarcaId] = useState<string | null>(null);
+    const [opcionesCategorias, setOpcionesCategorias] = useState<Categoria[]>([]);
+    const [opcionesMarcas, setOpcionesMarcas] = useState<Marca[]>([]);
+    // Picker abierto: 'categoria' | 'marca' | null. Una sola variable mantiene
+    // la mutua exclusión sin tener que sincronizar dos booleanos.
+    const [pickerAbierto, setPickerAbierto] = useState<'categoria' | 'marca' | null>(null);
     // Paso 3
     const [usaVariantes, setUsaVariantes] = useState(false);
 
@@ -96,6 +106,27 @@ export default function NuevoProductoScreen() {
             cancelado = true;
         };
     }, [sesion, negocio, ubicacionId]);
+
+    // Categorías y marcas se cargan una vez al montar; se cachean en estado
+    // local del wizard porque no se editan desde acá.
+    useEffect(() => {
+        if (!sesion || !negocio) return;
+        let cancelado = false;
+        container.listarCategoriasYMarcas
+            .execute({ negocioId: negocio.id, token: sesion.token })
+            .then(({ categorias, marcas }) => {
+                if (cancelado) return;
+                setOpcionesCategorias(categorias);
+                setOpcionesMarcas(marcas);
+            })
+            .catch(() => {
+                // Silencioso: si falla son lookups opcionales; el producto se
+                // puede crear igual sin categoría/marca.
+            });
+        return () => {
+            cancelado = true;
+        };
+    }, [sesion, negocio]);
 
     const precioNum = Number(precio);
     const costoNum = Number(costo);
@@ -270,6 +301,8 @@ export default function NuevoProductoScreen() {
                     stockInicial.trim() && Number(stockInicial) > 0 && !usaVariantes
                         ? ubicacionId
                         : null,
+                categoriaId,
+                marcaId,
             });
             // Refrescamos el catálogo local (sqlite) para que el POS encuentre
             // de inmediato el producto recién creado al escanear o buscar.
@@ -473,6 +506,35 @@ export default function NuevoProductoScreen() {
                     </>
                 ) : paso === 2 ? (
                     <>
+                        <SelectorRef
+                            label="Categoría"
+                            valor={
+                                opcionesCategorias.find((c) => c.id === categoriaId)?.nombre ??
+                                null
+                            }
+                            placeholder={
+                                opcionesCategorias.length === 0
+                                    ? 'Aún no tienes categorías'
+                                    : 'Sin categoría'
+                            }
+                            disabled={opcionesCategorias.length === 0}
+                            onPress={() => setPickerAbierto('categoria')}
+                            onClear={categoriaId ? () => setCategoriaId(null) : undefined}
+                        />
+                        <SelectorRef
+                            label="Marca"
+                            valor={
+                                opcionesMarcas.find((m) => m.id === marcaId)?.nombre ?? null
+                            }
+                            placeholder={
+                                opcionesMarcas.length === 0
+                                    ? 'Aún no tienes marcas'
+                                    : 'Sin marca'
+                            }
+                            disabled={opcionesMarcas.length === 0}
+                            onPress={() => setPickerAbierto('marca')}
+                            onClear={marcaId ? () => setMarcaId(null) : undefined}
+                        />
                         <TextField
                             label="SKU"
                             value={sku}
@@ -533,7 +595,145 @@ export default function NuevoProductoScreen() {
                 onClose={() => setScannerVisible(false)}
                 onScan={onScan}
             />
+
+            <Sheet
+                visible={pickerAbierto === 'categoria'}
+                onClose={() => setPickerAbierto(null)}
+                title="Elegir categoría"
+            >
+                <ScrollView style={{ maxHeight: 360 }}>
+                    <ListItem
+                        title="Sin categoría"
+                        onPress={() => {
+                            setCategoriaId(null);
+                            setPickerAbierto(null);
+                        }}
+                        divider
+                    />
+                    {opcionesCategorias.map((c) => (
+                        <ListItem
+                            key={c.id}
+                            title={c.nombre}
+                            trailing={
+                                categoriaId === c.id ? (
+                                    <Ionicons
+                                        name="checkmark"
+                                        size={20}
+                                        color={t.color.accent.default}
+                                    />
+                                ) : null
+                            }
+                            onPress={() => {
+                                setCategoriaId(c.id);
+                                setPickerAbierto(null);
+                            }}
+                            divider
+                        />
+                    ))}
+                </ScrollView>
+            </Sheet>
+
+            <Sheet
+                visible={pickerAbierto === 'marca'}
+                onClose={() => setPickerAbierto(null)}
+                title="Elegir marca"
+            >
+                <ScrollView style={{ maxHeight: 360 }}>
+                    <ListItem
+                        title="Sin marca"
+                        onPress={() => {
+                            setMarcaId(null);
+                            setPickerAbierto(null);
+                        }}
+                        divider
+                    />
+                    {opcionesMarcas.map((m) => (
+                        <ListItem
+                            key={m.id}
+                            title={m.nombre}
+                            trailing={
+                                marcaId === m.id ? (
+                                    <Ionicons
+                                        name="checkmark"
+                                        size={20}
+                                        color={t.color.accent.default}
+                                    />
+                                ) : null
+                            }
+                            onPress={() => {
+                                setMarcaId(m.id);
+                                setPickerAbierto(null);
+                            }}
+                            divider
+                        />
+                    ))}
+                </ScrollView>
+            </Sheet>
         </Screen>
+    );
+}
+
+/**
+ * Fila clickeable que muestra un valor de referencia (categoría, marca, etc.)
+ * y abre un sheet al tocarse. No usa TextField porque no se edita texto: el
+ * input es la selección desde una lista.
+ */
+function SelectorRef({
+    label,
+    valor,
+    placeholder,
+    disabled,
+    onPress,
+    onClear,
+}: {
+    label: string;
+    valor: string | null;
+    placeholder: string;
+    disabled?: boolean;
+    onPress: () => void;
+    onClear?: () => void;
+}) {
+    const t = useTheme();
+    return (
+        <View style={{ gap: t.space['1'] }}>
+            <Text variant="label" tone="secondary">
+                {label}
+            </Text>
+            <Pressable
+                onPress={onPress}
+                disabled={disabled}
+                style={({ pressed }) => ({
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: t.space['2'],
+                    paddingHorizontal: t.space['3'],
+                    paddingVertical: t.space['3'],
+                    borderRadius: t.radius.md,
+                    borderWidth: t.border.default,
+                    borderColor: t.color.border.subtle,
+                    backgroundColor: pressed ? t.color.bg.sunken : t.color.bg.canvas,
+                    opacity: disabled ? 0.5 : 1,
+                })}
+            >
+                <Text
+                    variant="bodyMd"
+                    tone={valor ? 'primary' : 'tertiary'}
+                    style={{ flex: 1 }}
+                >
+                    {valor ?? placeholder}
+                </Text>
+                {onClear && valor ? (
+                    <Pressable
+                        onPress={onClear}
+                        hitSlop={8}
+                        accessibilityLabel={`Quitar ${label.toLowerCase()}`}
+                    >
+                        <Ionicons name="close-circle" size={18} color={t.color.fg.tertiary} />
+                    </Pressable>
+                ) : null}
+                <Ionicons name="chevron-down" size={18} color={t.color.fg.tertiary} />
+            </Pressable>
+        </View>
     );
 }
 

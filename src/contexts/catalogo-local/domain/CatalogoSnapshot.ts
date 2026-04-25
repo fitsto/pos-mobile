@@ -27,6 +27,8 @@ export interface CatalogoProducto {
   tipo: string;
   activo: boolean;
   usaVariantes: boolean;
+  /** Primera imagen del producto — para mostrar en el POS sin pegar al detalle. */
+  imagenUrl: string | null;
   updatedAt: string;
 }
 

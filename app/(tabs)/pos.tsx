@@ -74,7 +74,7 @@ function toProducto(p: CatalogoProducto): Producto {
         precioVentaNetoUnitario: p.precioVentaFinal,
         precioOferta: p.precioOferta,
         imagenes: [],
-        imagenUrl: null,
+        imagenUrl: p.imagenUrl ?? null,
         activo: p.activo,
     });
 }

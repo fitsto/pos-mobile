@@ -33,6 +33,7 @@ interface ProductoRow {
   tipo: string;
   activo: number;
   usa_variantes: number;
+  imagen_url: string | null;
   updated_at: string;
 }
 
@@ -77,6 +78,7 @@ function rowToProducto(r: ProductoRow): CatalogoProducto {
     tipo: r.tipo,
     activo: r.activo === 1,
     usaVariantes: r.usa_variantes === 1,
+    imagenUrl: r.imagen_url ?? null,
     updatedAt: r.updated_at,
   };
 }
@@ -138,6 +140,7 @@ export class SqliteCatalogoLocalRepository implements CatalogoLocalRepository {
         tipo TEXT NOT NULL,
         activo INTEGER NOT NULL DEFAULT 1,
         usa_variantes INTEGER NOT NULL DEFAULT 0,
+        imagen_url TEXT,
         updated_at TEXT NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_productos_nombre ON productos(nombre);
@@ -198,6 +201,24 @@ export class SqliteCatalogoLocalRepository implements CatalogoLocalRepository {
         value TEXT
       );
     `);
+
+    // Migración aditiva: si la app venía corriendo con un schema viejo, le
+    // agregamos la columna nueva. SQLite no tiene "ADD COLUMN IF NOT EXISTS"
+    // así que detectamos via PRAGMA antes de intentar.
+    await this.ensureColumn(db, 'productos', 'imagen_url', 'TEXT');
+  }
+
+  private async ensureColumn(
+    db: SQLite.SQLiteDatabase,
+    table: string,
+    column: string,
+    type: string,
+  ): Promise<void> {
+    const cols = await db.getAllAsync<{ name: string }>(
+      `PRAGMA table_info(${table})`,
+    );
+    if (cols.some((c) => c.name === column)) return;
+    await db.execAsync(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
   }
 
   async buscarProductos({
@@ -408,8 +429,8 @@ export class SqliteCatalogoLocalRepository implements CatalogoLocalRepository {
       await db.runAsync(
         `INSERT INTO productos (id, organization_id, categoria_id, marca_id, nombre, codigo_interno,
           codigo_barra, costo_neto, precio_venta_final, precio_venta_neto, precio_oferta, tipo, activo,
-          usa_variantes, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          usa_variantes, imagen_url, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         p.id,
         p.organizationId,
         p.categoriaId,
@@ -424,6 +445,7 @@ export class SqliteCatalogoLocalRepository implements CatalogoLocalRepository {
         p.tipo,
         p.activo ? 1 : 0,
         p.usaVariantes ? 1 : 0,
+        p.imagenUrl ?? null,
         p.updatedAt,
       );
     }
@@ -434,8 +456,8 @@ export class SqliteCatalogoLocalRepository implements CatalogoLocalRepository {
       await db.runAsync(
         `INSERT INTO productos (id, organization_id, categoria_id, marca_id, nombre, codigo_interno,
           codigo_barra, costo_neto, precio_venta_final, precio_venta_neto, precio_oferta, tipo, activo,
-          usa_variantes, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          usa_variantes, imagen_url, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            organization_id = excluded.organization_id,
            categoria_id = excluded.categoria_id,
@@ -450,6 +472,7 @@ export class SqliteCatalogoLocalRepository implements CatalogoLocalRepository {
            tipo = excluded.tipo,
            activo = excluded.activo,
            usa_variantes = excluded.usa_variantes,
+           imagen_url = excluded.imagen_url,
            updated_at = excluded.updated_at`,
         p.id,
         p.organizationId,
@@ -465,6 +488,7 @@ export class SqliteCatalogoLocalRepository implements CatalogoLocalRepository {
         p.tipo,
         p.activo ? 1 : 0,
         p.usaVariantes ? 1 : 0,
+        p.imagenUrl ?? null,
         p.updatedAt,
       );
     }

@@ -16,6 +16,11 @@ export interface ProductoData {
   imagenes: ProductoImagen[];
   imagenUrl: string | null;
   activo: boolean;
+  /**
+   * Suma de stock en todas las ubicaciones (incluye variantes). null/ausente
+   * cuando el endpoint no la entrega (ej: detalle). En listado siempre llega.
+   */
+  stockTotal?: number | null;
 }
 
 export class Producto {
@@ -41,6 +46,7 @@ export class Producto {
   get precioVentaFinalUnitario(): number { return this.data.precioVentaFinalUnitario; }
   get precioVentaNetoUnitario(): number { return this.data.precioVentaNetoUnitario; }
   get precioOferta(): number | null { return this.data.precioOferta; }
+  get stockTotal(): number | null { return this.data.stockTotal ?? null; }
 
   /** Precio efectivo: oferta si existe, sino precio normal. */
   get precio(): number {

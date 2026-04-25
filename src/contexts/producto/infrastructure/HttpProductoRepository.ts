@@ -31,6 +31,7 @@ interface ApiProducto {
   imagenes?: ApiProductoImagen[];
   imagenUrl: string | null;
   activo: boolean;
+  stockTotal?: number;
 }
 
 /**
@@ -52,6 +53,7 @@ function toProductoData(p: ApiProducto) {
     imagenes: p.imagenes ?? [],
     imagenUrl: p.imagenUrl,
     activo: p.activo,
+    stockTotal: p.stockTotal ?? null,
   };
 }
 

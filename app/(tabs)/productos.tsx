@@ -227,11 +227,27 @@ export default function ProductosScreen() {
                                 )
                             }
                             title={item.activo ? item.nombre : `${item.nombre} (inactivo)`}
-                            subtitle={item.sku ? `SKU ${item.sku}` : item.codigoBarras ?? undefined}
+                            subtitle={
+                                (() => {
+                                    const id = item.sku ? `SKU ${item.sku}` : item.codigoBarras ?? null;
+                                    const stock =
+                                        item.stockTotal !== null
+                                            ? `Stock ${item.stockTotal}`
+                                            : null;
+                                    return [id, stock].filter(Boolean).join(' · ') || undefined;
+                                })()
+                            }
                             trailing={
-                                <Text variant="monoMd" tabular emphasized>
-                                    {formatCLP(item.precio)}
-                                </Text>
+                                <View style={{ alignItems: 'flex-end' }}>
+                                    <Text variant="monoMd" tabular emphasized>
+                                        {formatCLP(item.precio)}
+                                    </Text>
+                                    {item.stockTotal !== null && item.stockTotal <= 0 ? (
+                                        <Text variant="label" tone="danger" style={{ marginTop: 2 }}>
+                                            SIN STOCK
+                                        </Text>
+                                    ) : null}
+                                </View>
                             }
                             onPress={() => router.push(`/producto/${item.id}`)}
                             divider

@@ -15,6 +15,8 @@ import { SubirImagenProductoUseCase } from '../../contexts/producto/application/
 import { DesactivarProductoUseCase } from '../../contexts/producto/application/DesactivarProductoUseCase';
 import { ActivarProductoUseCase } from '../../contexts/producto/application/ActivarProductoUseCase';
 import { BuscarProductoPorCodigoUseCase } from '../../contexts/producto/application/BuscarProductoPorCodigoUseCase';
+import { HttpCatalogoOpcionesRepository } from '../../contexts/producto/infrastructure/HttpCatalogoOpcionesRepository';
+import { ListarCategoriasYMarcasUseCase } from '../../contexts/producto/application/ListarCategoriasYMarcasUseCase';
 import { HttpProductoMaestroRepository } from '../../contexts/producto-maestro/infrastructure/HttpProductoMaestroRepository';
 import { BuscarProductoMaestroUseCase } from '../../contexts/producto-maestro/application/BuscarProductoMaestroUseCase';
 import { HttpVarianteRepository } from '../../contexts/producto/infrastructure/HttpVarianteRepository';
@@ -51,6 +53,7 @@ const ubicacionRepository = new HttpUbicacionRepository();
 const stockRepository = new HttpStockRepository();
 const clienteRepository = new HttpClienteRepository();
 const productoMaestroRepository = new HttpProductoMaestroRepository();
+const catalogoOpcionesRepository = new HttpCatalogoOpcionesRepository();
 
 export const container = {
   login: new LoginUseCase(authRepository, sesionStorage),
@@ -67,6 +70,7 @@ export const container = {
   activarProducto: new ActivarProductoUseCase(productoRepository),
   buscarProductoPorCodigo: new BuscarProductoPorCodigoUseCase(productoRepository),
   buscarProductoMaestro: new BuscarProductoMaestroUseCase(productoMaestroRepository),
+  listarCategoriasYMarcas: new ListarCategoriasYMarcasUseCase(catalogoOpcionesRepository),
   listarVariantes: new ListarVariantesUseCase(varianteRepository),
   crearVenta: new CrearVentaUseCase(ventaRepository),
   listarVentas: new ListarVentasUseCase(ventaRepository),
